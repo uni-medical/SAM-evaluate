@@ -87,6 +87,7 @@ def evaluate_batch_images(args, model):
                                                                         "boxes" if args.include_prompt_box else "points",
                                                                         args.num_boxes  if args.include_prompt_box else args.num_point
                                       ))
+    os.makedirs(args.save_path, exist_ok=True)
     loggers = get_logger(path)
     print("save_path:", path)
     l = len(train_loader)
