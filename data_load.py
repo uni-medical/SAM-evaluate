@@ -228,10 +228,16 @@ class Data_Loader(Dataset):
         # 初始化函数，读取所有data_path下的图片
         self.image_size = image_size
         self.data_path = data_path
-        self.imgs_path = [f for f in glob.glob(os.path.join(data_path, 'images', mode, '*.*')) if
-                          f.endswith(('.jpg', '.png', '.jpeg', '.tif'))]
-        self.label_path = [f for f in glob.glob(os.path.join(data_path, 'masks', mode, '*.*')) if
-                          f.endswith(('.jpg', '.png', '.jpeg', '.tif'))]
+        
+        
+        self.img_list = [line.strip() +".png" for line in open(os.path.join(data_path, mode +".txt"), "r").readlines()]
+        self.imgs_path = [os.path.join(data_path, "images", img) for img in self.img_list]
+        self.label_path = [os.path.join(data_path, "masks", img) for img in self.img_list]
+        
+#         self.imgs_path = [f for f in glob.glob(os.path.join(data_path, 'images', mode, '*.*')) if
+#                           f.endswith(('.jpg', '.png', '.jpeg', '.tif'))]
+#         self.label_path = [f for f in glob.glob(os.path.join(data_path, 'masks', mode, '*.*')) if
+#                           f.endswith(('.jpg', '.png', '.jpeg', '.tif'))]
 
         self.imgs_path.sort()
         self.label_path.sort()
