@@ -214,7 +214,7 @@ def parse_args():
     parser.add_argument("--include_prompt_box", type=bool, default=False, help="need boxes prompt")
     parser.add_argument("--num_boxes", type=int, default=1, help="boxes or boxes number")
     parser.add_argument("--multimask_output", type=bool, default=True, help="multimask output")
-    parser.add_argument("--save_path", type=str, default='save_datasets/isic2018_task1/1024_point_12/', help="save data path")
+    parser.add_argument("--save_path", type=str, default='save_datasets/isic2018_task1/', help="save data path")
     args = parser.parse_args()
 
     return args
