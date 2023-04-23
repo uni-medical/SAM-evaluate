@@ -82,14 +82,27 @@ def evaluate_batch_images(args, model):
     train_loader = DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=False, num_workers=48)
     progress_bar = tqdm(train_loader)
 
-    path = os.path.join(args.save_path, "{}_{}_{}.txt".format(
-                                                                        args.image_size,
-                                                                        "boxes" if args.include_prompt_box else "points",
-                                                                        args.num_boxes  if args.include_prompt_box else args.num_point
-                                      ))
-    os.makedirs(args.save_path, exist_ok=True)
-    loggers = get_logger(path)
-    print("save_path:", path)
+    if len(torch.unique(next(iter(train_loader))['label'])) > 2:
+        print('The number of categories is greater than 2:', torch.unique(next(iter(train_loader))['label']))
+        exit()
+
+    save_path = os.path.join(args.save_path, "{}_{}_{}".format(
+        args.image_size,
+        "boxes" if args.include_prompt_box else "points",
+        args.num_boxes if args.include_prompt_box else args.num_point
+    ))
+
+    txt_path = save_path + "/{}_{}_{}.txt".format(
+        args.image_size,
+        "boxes" if args.include_prompt_box else "points",
+        args.num_boxes if args.include_prompt_box else args.num_point
+    )
+
+    os.makedirs(save_path, exist_ok=True)
+    loggers = get_logger(txt_path)
+
+    print('image number:', len(dataset))
+    print("save_path:", save_path)
     l = len(train_loader)
 
     score_batch_metrics = [0] * len(args.metrics)
@@ -118,7 +131,6 @@ def evaluate_batch_images(args, model):
             else:
                 box = None
 
-
             if args.include_prompt_box and args.num_boxes > 1:
                 masks, scores, logits = model.predict_torch(
                     point_coords=None,
@@ -129,9 +141,9 @@ def evaluate_batch_images(args, model):
 
             else:
                 masks, scores, logits = model.predict(
-                    point_coords = point_coords,
-                    point_labels = point_labels,
-                    box = box,
+                    point_coords=point_coords,
+                    point_labels=point_labels,
+                    box=box,
                     multimask_output=args.multimask_output,
                 )
 
@@ -157,14 +169,13 @@ def evaluate_batch_images(args, model):
             # plt.axis('off')
             # plt.show()
 
-
         out_mask = torch.stack(batch_mask, dim=0).to(device)
         out_iou = torch.stack(batch_score, dim=0).to(device)
         label = batch_input["label"].to(device)
         best_iouscore_masks = select_mask_with_highest_iouscore(out_mask, out_iou)
         best_overlap_masks, overlap_score = select_mask_with_highest_overlap(out_mask, label)
 
-        save_img(best_iouscore_masks, best_overlap_masks, label, args.save_path, batch_input['name'])
+        save_img(best_iouscore_masks, best_overlap_masks, label, save_path, batch_input['name'])
 
         score_metrics_ = SegMetrics(best_iouscore_masks, label, args.metrics)
         overlap_metrics_ = SegMetrics(best_overlap_masks, label, args.metrics)
@@ -172,7 +183,6 @@ def evaluate_batch_images(args, model):
         for i in range(len(args.metrics)):
             score_batch_metrics[i] += score_metrics_[i]
             overlap_batch_metrics[i] += overlap_metrics_[i]
-
 
     for i, metr in enumerate(args.metrics):
         score_metrics[metr] = score_batch_metrics[i] / l
@@ -184,9 +194,8 @@ def evaluate_batch_images(args, model):
 
     loggers.info(f"get metrics on masks through iou score:  {score_metrics}")
     loggers.info(f"get metrics on masks through overlap:  {overlap_metrics}")
-    #print('\n get metrics on masks through iou score:', score_metrics)
-    #print('\n get metrics on masks through overlap:', overlap_metrics)
-
+    # print('\n get metrics on masks through iou score:', score_metrics)
+    # print('\n get metrics on masks through overlap:', overlap_metrics)
     return
 
 
