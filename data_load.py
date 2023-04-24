@@ -191,28 +191,28 @@ def random_point_sampling(img, point_num = 2):
     # 获取黑/白色像素的坐标
     white_pixels = np.argwhere(img == 1)
     # 从中随机选择num_points个点
-    coords = white_pixels[np.random.choice(white_pixels.shape[0], point_num, replace=False)]
-    coords[:, [0, 1]] = coords[:, [1, 0]]
-    labels = np.ones(shape=(point_num))
+    if len(white_pixels) > 12:
+        coords = white_pixels[np.random.choice(white_pixels.shape[0], point_num, replace=False)]
+        coords[:, [0, 1]] = coords[:, [1, 0]]
+        labels = np.ones(shape=(point_num))
 
-    '''
-    #随机选择点
-    coords = []
-    for i in range(point_num):
-        x, y = np.random.randint(0, img.shape[0]), np.random.randint(0, img.shape[1])
-        coords.append((x, y))
-    labels = []
-    for coord in coords:
-        if img[coord[0], coord[1]] > 0:
-            labels.append(1)
-        else:
-            labels.append(0)
-    # print(np.array(coords).shape)
-    # print(np.array(labels).shape)
-    '''
+    else:
+        #随机选择点
+        coords = []
+        for i in range(point_num):
+            x, y = np.random.randint(0, img.shape[0]), np.random.randint(0, img.shape[1])
+            coords.append((x, y))
+        labels = []
+        for coord in coords:
+            if img[coord[0], coord[1]] > 0:
+                labels.append(1)
+            else:
+                labels.append(0)
+        # print(np.array(coords).shape)
+        # print(np.array(labels).shape)
+
     labels = torch.as_tensor(labels, dtype=torch.int)
     coords = torch.as_tensor(coords, dtype=torch.float)
-
     return coords, labels
 
 
@@ -228,16 +228,12 @@ class Data_Loader(Dataset):
         # 初始化函数，读取所有data_path下的图片
         self.image_size = image_size
         self.data_path = data_path
-        
-        
+
         self.img_list = [line.strip() +".png" for line in open(os.path.join(data_path, mode +".txt"), "r").readlines()]
         self.imgs_path = [os.path.join(data_path, "images", img) for img in self.img_list]
         self.label_path = [os.path.join(data_path, "masks", img) for img in self.img_list]
-        
-#         self.imgs_path = [f for f in glob.glob(os.path.join(data_path, 'images', mode, '*.*')) if
-#                           f.endswith(('.jpg', '.png', '.jpeg', '.tif'))]
-#         self.label_path = [f for f in glob.glob(os.path.join(data_path, 'masks', mode, '*.*')) if
-#                           f.endswith(('.jpg', '.png', '.jpeg', '.tif'))]
+        #self.imgs_path = [f for f in glob.glob(os.path.join(data_path, 'images', mode, '*.*')) if f.endswith(('.jpg', '.png', '.jpeg', '.tif'))]
+        #self.label_path = [f for f in glob.glob(os.path.join(data_path, 'masks', mode, '*.*')) if f.endswith(('.jpg', '.png', '.jpeg', '.tif'))]
 
         self.imgs_path.sort()
         self.label_path.sort()
@@ -293,12 +289,11 @@ class Data_Loader(Dataset):
 
 
 if __name__ == "__main__":
-    train_dataset = Data_Loader("/home/chengjunlong/datasets/isic2017_task1/", image_size=1024, mode='train', prompt_point=True, prompt_box=False)
+    train_dataset = Data_Loader("/home/chengjunlong//mount_preprocessed_sam/2d/semantic_seg/fundus_photography/drac2022_taska1/", image_size=1024, mode='train', prompt_point=True, prompt_box=False)
     print("数据个数：", len(train_dataset))
     train_batch_sampler = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=4, shuffle=False)
     for batched_image in (train_batch_sampler):
         print(batched_image['image'].shape)
         print(batched_image['label'].shape)
-        print(batched_image.get('point_coords', None).shape)
-        print(batched_image.get('point_labels', None).shape)
+        print(torch.unique(batched_image['label']))
         # print(batched_image.get('boxes', None))

@@ -8,6 +8,35 @@ import argparse
 import torch.nn as nn
 import logging
 
+
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--batch_size", type=int, default=12, help="train batch size")
+    parser.add_argument("--image_size", type=int, default=1024, help="image_size")
+    parser.add_argument("--data_path", type=str, default='/home/chengjunlong/mount_preprocessed_sam/2d/semantic_seg/fundus_photography/retinacheck/', help="eval data path")
+    parser.add_argument("--data_mode", type=str, default='val', help="eval train or test data")
+    parser.add_argument("--metrics", nargs='+', default=['acc', 'iou', 'dice', 'sens', 'spec'], help="metrics")
+    parser.add_argument("--device_ids", nargs='+', type=int, default=[0, 1, 2, 3], help="device_ids")
+    parser.add_argument("--model_type", type=str, default="vit_h", help="sam model_type")
+    parser.add_argument("--sam_checkpoint", type=str, default="pretrain_model/sam_vit_h_4b8939.pth", help="sam checkpoint")
+    parser.add_argument("--include_prompt_point", type=bool, default=True, help="need point prompt")
+    parser.add_argument("--num_point", type=int, default=12, help="point or point number")
+    parser.add_argument("--include_prompt_box", type=bool, default=False, help="need boxes prompt")
+    parser.add_argument("--num_boxes", type=int, default=1, help="boxes or boxes number")
+    parser.add_argument("--multimask_output", type=bool, default=True, help="multimask output")
+    parser.add_argument("--save_path", type=str, default='save_datasets/retinacheck/', help="save data path")
+    args = parser.parse_args()
+
+    return args
+
+
+
+
+
+
+
 def show_mask(mask, ax, random_color=False):
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
@@ -70,6 +99,7 @@ def evaluate_batch_images(args, model):
     - labels: a tensor containing the ground truth label for each image in the dataset.
     """
 
+    
     dataset = Data_Loader(data_path=args.data_path,
                           image_size=args.image_size,
                           mode=args.data_mode,
@@ -196,35 +226,17 @@ def evaluate_batch_images(args, model):
     loggers.info(f"get metrics on masks through overlap:  {overlap_metrics}")
     # print('\n get metrics on masks through iou score:', score_metrics)
     # print('\n get metrics on masks through overlap:', overlap_metrics)
+
     return
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size", type=int, default=12, help="train batch size")
-    parser.add_argument("--image_size", type=int, default=1024, help="image_size")
-    parser.add_argument("--data_path", type=str, default='/home/chengjunlong/datasets/isic2018_task1/', help="eval data path")
-    parser.add_argument("--data_mode", type=str, default='val', help="eval train or test data")
-    parser.add_argument("--metrics", nargs='+', default=['acc', 'iou', 'dice', 'sens', 'spec'], help="metrics")
-    parser.add_argument("--device_ids", nargs='+', type=int, default=[0, 1, 2, 3], help="device_ids")
-    parser.add_argument("--model_type", type=str, default="vit_h", help="sam model_type")
-    parser.add_argument("--sam_checkpoint", type=str, default="pretrain_model/sam_vit_h_4b8939.pth", help="sam checkpoint")
-    parser.add_argument("--include_prompt_point", type=bool, default=True, help="need point prompt")
-    parser.add_argument("--num_point", type=int, default=12, help="point or point number")
-    parser.add_argument("--include_prompt_box", type=bool, default=False, help="need boxes prompt")
-    parser.add_argument("--num_boxes", type=int, default=1, help="boxes or boxes number")
-    parser.add_argument("--multimask_output", type=bool, default=True, help="multimask output")
-    parser.add_argument("--save_path", type=str, default='save_datasets/isic2018_task1/', help="save data path")
-    args = parser.parse_args()
-
-    return args
 
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args = parse_args()
     args.device = device
-    model = sam_model_registry[args.model_type](args.sam_checkpoint)
+    model = sam_model_registry[args.model_type](args.sam_checkpoint, args.image_size)
     if len(args.device_ids) > 1:
         print("Let's use", len(args.device_ids), "GPUs!")
         model = nn.DataParallel(model, device_ids=args.device_ids)
