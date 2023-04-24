@@ -215,8 +215,7 @@ def evaluate_batch_images(args, model):
             slice_iou[y] /= image.shape[0]
             slice_dice[y] /= image.shape[0]
 
-        loggers.info(f"{batch_input['name'][0]} volume {len(slice_iou)} category IoU: {slice_iou}")
-        loggers.info(f"{batch_input['name'][0]} volume {len(slice_dice)} category Dice: {slice_dice}")
+        loggers.info(f"{batch_input['name'][0]} volume {len(slice_iou)} category IoU: {slice_iou}, Dice: {slice_dice}")
 
         mean_iou.append(slice_iou)
         mean_dice.append(slice_dice)
@@ -226,8 +225,8 @@ def evaluate_batch_images(args, model):
     for i in range(len(iou)):
         iou[i] = '{:.4f}'.format(iou[i])
         dice[i] = '{:.4f}'.format(dice[i])
-    loggers.info(f"{len(mean_iou)} volume mIoU: {iou}")
-    loggers.info(f"{len(mean_dice)} volume mDice: {dice}")
+    loggers.info(f"{len(mean_iou)} volume mIoU: {iou}, mDice: {dice}")
+
 
 
 
