@@ -82,42 +82,38 @@ def select_mask_with_highest_overlap(mask: torch.Tensor, label: torch.Tensor) ->
     return out_mask, out_overlap_score
 
 
-def save_img3d(predict_score, predict_overlap, label, image, save_path, mask_name):
-
-    if predict_score.dtype == torch.bool:
-        predict_score = predict_score.type(torch.int)
+def save_img3d(predict_overlap, label, image, save_path, mask_name):
 
     if predict_overlap.dtype == torch.bool:
         predict_overlap = predict_overlap.type(torch.int)
 
-    predict_score = predict_score.cpu().numpy()     #C,1,256,256
     predict_overlap = predict_overlap.cpu().numpy() #C,1,256,256
     label = label.cpu().numpy()  #C,1,256,256
     image = image.cpu().numpy()[...,0]  #C,256,256,1
 
-    predict_score = np.moveaxis(np.squeeze(predict_score, axis=1), [0, 1, 2], [2, 0, 1])
+
     predict_overlap = np.moveaxis(np.squeeze(predict_overlap, axis=1), [0, 1, 2], [2, 0, 1])
     label = np.moveaxis(np.squeeze(label, axis=1), [0, 1, 2], [2, 0, 1])
     image = np.moveaxis(image, [0, 1, 2], [2, 0, 1])
 
-    save_score_path = os.path.join(save_path, 'score_masks')
+
     save_overlap_path = os.path.join(save_path, 'overlap_masks')
     save_label_path = os.path.join(save_path, 'masks')
     save_image_path = os.path.join(save_path, 'images')
 
-    os.makedirs(save_score_path, exist_ok=True)
+
     os.makedirs(save_overlap_path, exist_ok=True)
     os.makedirs(save_label_path, exist_ok=True)
     os.makedirs(save_image_path, exist_ok=True)
 
-    predict_score = nib.Nifti1Image(predict_score, affine=np.eye(4))
     predict_overlap = nib.Nifti1Image(predict_overlap, affine=np.eye(4))
     label = nib.Nifti1Image(label, affine=np.eye(4))
     image = nib.Nifti1Image(image, affine=np.eye(4))
-    nib.save(predict_score, os.path.join(save_score_path, mask_name))
+
     nib.save(predict_overlap, os.path.join(save_overlap_path, mask_name))
     nib.save(label, os.path.join(save_label_path, mask_name))
     nib.save(image, os.path.join(save_image_path, mask_name))
+
 
 
 def save_img(predict_score, predict_overlap, label, save_path, mask_name):
