@@ -43,7 +43,7 @@ class Data_Loader(Dataset):
         self.prompt_point = prompt_point
         self.prompt_box = prompt_box
         self.dim = dim
-        self.count = 0
+
 
     def __getitem__(self, index):
         image_input = {}
@@ -51,17 +51,16 @@ class Data_Loader(Dataset):
         image = nib.load(self.imgs_path[index]).get_fdata()
         mask = nib.load(self.label_path[index]).get_fdata()
 
-        if image.shape[-1] < (self.image_size * 0.5):
-            self.dim = 'z'
-            if self.count  == 0:
-                print("We want the number of 'z' axes to be at least larger than (image size: %s * 0.5)"%self.image_size)
-                print('Can only be tested on the "z" axis! image size:', image.shape)
-                self.count += 1
 
-  
+        if image.shape[-1] < (self.image_size * 0.5) and self.dim != 'z':
+            self.dim = 'z'
+            print("We want the number of 'z' axes to be at least larger than (image size: %s * 0.5)"%self.image_size)
+            print('Can only be tested on the "z" axis! image size:', image.shape)
+
+
+
         target_size = (self.image_size, self.image_size)
         if self.dim == 'z':
-
             nonzero_slices = np.where(np.any(mask, axis=(0, 1)))[0]
             select_image = image[:, :, nonzero_slices]
             selcet_mask = mask[:, :, nonzero_slices]
@@ -194,7 +193,7 @@ class Data_Loader(Dataset):
             boxes = torch.stack(boxes_, dim=0)
             image_input["boxes"] = boxes
 
-        image_name = self.imgs_path[index].split('/')[-1]
+        image_name = self.imgs_path[index].split('\\')[-1]
         image_input["dim"] = self.dim
 
         if self.requires_name:
