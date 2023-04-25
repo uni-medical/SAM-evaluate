@@ -78,7 +78,7 @@ class Data_Loader(Dataset):
 
 
         class_num = len(np.unique(selcet_mask))
-
+        select_image = cv2.normalize(select_image, None, 0, 255, norm_type=cv2.NORM_MINMAX)
         resized_image = cv2.resize(select_image, target_size, cv2.INTER_NEAREST)
         resized_mask = cv2.resize(selcet_mask, target_size, cv2.INTER_NEAREST).astype(np.int)
 
