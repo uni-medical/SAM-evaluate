@@ -19,7 +19,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=1, help="train batch size")
     parser.add_argument("--image_size", type=int, default=256, help="image_size")
-    parser.add_argument("--data_path", type=str, default='datasets/ISLES2018/',help="eval data path")
+    parser.add_argument("--data_path", type=str, default='datasets/autoPET/',help="eval data path")
     parser.add_argument("--dim", type=str, default='z', help="testing dim, default 'z' ")
     parser.add_argument("--metrics", nargs='+', default=['iou', 'dice'], help="metrics")
     parser.add_argument("--device_ids", nargs='+', type=int, default=[0,1], help="device_ids")
@@ -30,7 +30,7 @@ def parse_args():
     parser.add_argument("--include_prompt_box", type=bool, default=True, help="need boxes prompt")
     parser.add_argument("--num_boxes", type=int, default=1, help="boxes or boxes number")
     parser.add_argument("--multimask_output", type=bool, default=True, help="multimask output")
-    parser.add_argument("--save_path", type=str, default='save_datasets/3d/ISLES2018/',
+    parser.add_argument("--save_path", type=str, default='save_datasets/3d/autoPET/',
                         help="save data path")
     args = parser.parse_args()
 
@@ -114,9 +114,10 @@ def evaluate_batch_images(args, model):
 
     mean_iou, mean_dice = [], []
     for batch_input in progress_bar:
-
         image = batch_input['image'][0]   #(1, slice, class, 256, 256, 3) or [1, slice, 1, 256, 256, 3]
         label = batch_input['label'][0]
+        zero_mask = batch_input['zero_mask'][0]
+        index =  batch_input['index'][0]
 
         if args.include_prompt_point:
             point_coord = batch_input['point_coords'][0]  #[1,slice, class, N, 2])
@@ -193,8 +194,7 @@ def evaluate_batch_images(args, model):
                 slice_iou[x] += class_metrics_[0]
                 slice_dice[x] += class_metrics_[1]
 
-        if len(slice_iou) == 1:
-            save_img3d(torch.cat(volume_mask, dim=0), label, image[:,0,...], save_path, batch_input['name'][0])
+        save_img3d(torch.cat(volume_mask, dim=1), save_path, batch_input['name'][0], zero_mask, index)
 
         for y in range(len(slice_iou)):
             slice_iou[y] /= image.shape[0]
