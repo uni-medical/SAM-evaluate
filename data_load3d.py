@@ -161,7 +161,7 @@ class Data_Loader(Dataset):
             boxes = torch.stack(boxes_, dim=0)
             image_input["boxes"] = boxes
 
-        image_name = self.imgs_path[index].split('\\')[-1]
+        image_name = self.imgs_path[index].split('/')[-1]
         image_input["dim"] = self.dim
         image_input["zero_mask"] = zero_mask
         image_input["index"] = nonzero_slices
