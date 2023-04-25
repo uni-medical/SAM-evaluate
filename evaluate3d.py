@@ -19,17 +19,18 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=1, help="train batch size")
     parser.add_argument("--image_size", type=int, default=256, help="image_size")
-    parser.add_argument("--data_path", type=str, default='/home/chengjunlong/mount_preprocessed_sam/3d/semantic_seg/mr_cbv/ISLES_SPES/',help="eval data path")
+    parser.add_argument("--data_path", type=str, default='datasets/ISLES2018/',help="eval data path")
+    parser.add_argument("--dim", type=str, default='z', help="testing dim, default 'z' ")
     parser.add_argument("--metrics", nargs='+', default=['iou', 'dice'], help="metrics")
-    parser.add_argument("--device_ids", nargs='+', type=int, default=[0,1, 2, 3], help="device_ids")
-    parser.add_argument("--model_type", type=str, default="vit_b", help="sam model_type")
-    parser.add_argument("--sam_checkpoint", type=str, default="pretrain_model/sam_vit_b_01ec64.pth",help="sam checkpoint")
+    parser.add_argument("--device_ids", nargs='+', type=int, default=[0,1], help="device_ids")
+    parser.add_argument("--model_type", type=str, default="vit_h", help="sam model_type")
+    parser.add_argument("--sam_checkpoint", type=str, default="pretrain_model/sam_vit_h_4b8939.pth",help="sam checkpoint")
     parser.add_argument("--include_prompt_point", type=bool, default=True, help="need point prompt")
     parser.add_argument("--num_point", type=int, default=1, help="point or point number")
     parser.add_argument("--include_prompt_box", type=bool, default=True, help="need boxes prompt")
     parser.add_argument("--num_boxes", type=int, default=1, help="boxes or boxes number")
     parser.add_argument("--multimask_output", type=bool, default=True, help="multimask output")
-    parser.add_argument("--save_path", type=str, default='save_datasets/3d/mr_cbv/ISLES_SPES/',
+    parser.add_argument("--save_path", type=str, default='save_datasets/3d/ISLES2018/',
                         help="save data path")
     args = parser.parse_args()
 
@@ -81,61 +82,41 @@ def get_logger(filename, verbosity=1, name=None):
 
 
 def evaluate_batch_images(args, model):
-    """
-    evaluate the batch of images using a given model to produce output masks and iou predictions.
-
-    args:
-    - model: an instance of a pytorch model.
-    - device: a string specifying the device on which to run the model (either 'cuda' or 'cpu').
-    - data_path: a string specifying the path to the data directory containing the images to be evaluated.
-    - batch_size: an integer specifying the number of images to process in each batch.
-    - mode: a string indicating the type of the evaluation to perform ('train' or 'test'). default is 'train'.
-    - include_prompt_point: a boolean indicating whether or not to include prompt points in the input. default is true.
-    - include_prompt_box: a boolean indicating whether or not to include prompt boxes in the input. default is true.
-    - num_point_boxes: an integer specifying the number of point boxes to include in the input. default is 1.
-
-    returns:
-    - best_score_masks: a tensor containing the mask with the highest iou score for each prompt point box in the dataset.
-    - best_overlap_masks: a tensor containing the mask with the highest overlap score for each prompt point box in the dataset.
-    - labels: a tensor containing the ground truth label for each image in the dataset.
-    """
 
     dataset = Data_Loader(data_path=args.data_path,
                           image_size=args.image_size,
                           prompt_point=args.include_prompt_point,
                           prompt_box=args.include_prompt_box,
                           num_boxes=args.num_boxes,
-                          num_point=args.num_point
+                          num_point=args.num_point,
+                          dim = args.dim,
                           )
 
     train_loader = DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=False, num_workers=32)
     progress_bar = tqdm(train_loader)
+    dim = next(iter(progress_bar))['dim'][0]
 
-    save_path = os.path.join(args.save_path, "{}_{}_{}".format(
-        args.image_size,
-        "boxes" if args.include_prompt_box else "points",
-        args.num_boxes if args.include_prompt_box else args.num_point
-    ))
-
-    txt_path = save_path + "/{}_{}_{}.txt".format(
-        args.image_size,
-        "boxes" if args.include_prompt_box else "points",
-        args.num_boxes if args.include_prompt_box else args.num_point
-    )
+    save_path = os.path.join(args.save_path,
+                             f"{dim}_{args.image_size}"
+                             f"_{'boxes' if args.include_prompt_box else 'points'}"
+                             f"_{args.num_boxes if args.include_prompt_box else args.num_point}")
 
     os.makedirs(save_path, exist_ok=True)
+
+    txt_path = os.path.join(save_path,
+                            f"{dim}_{args.image_size}"
+                            f"_{'boxes' if args.include_prompt_box else 'points'}"
+                            f"_{args.num_boxes if args.include_prompt_box else args.num_point}.txt")
+
     loggers = get_logger(txt_path)
 
-    print('image number:', len(dataset))
-
-    l = len(train_loader)
+    print(f"Volume number: {len(dataset)}")
 
     mean_iou, mean_dice = [], []
     for batch_input in progress_bar:
 
         image = batch_input['image'][0]   #(1, slice, class, 256, 256, 3) or [1, slice, 1, 256, 256, 3]
         label = batch_input['label'][0]
-
 
         if args.include_prompt_point:
             point_coord = batch_input['point_coords'][0]  #[1,slice, class, N, 2])
@@ -151,9 +132,9 @@ def evaluate_batch_images(args, model):
 
         slice_iou = [0] * image.shape[1]
         slice_dice = [0] * image.shape[1]
+        volume_mask, volume_label = [],[]
         for i in range(image.shape[0]):  #slice
             class_mask= []
-
             for j in range(image.shape[1]): #class
                 image_ = image[i][j].cpu().numpy().astype(np.uint8)
                 model.set_image(image_)
@@ -205,28 +186,34 @@ def evaluate_batch_images(args, model):
             label_ = label[i].unsqueeze(1).to(device)      #class, 1, h, w
 
             best_masks, overlap_score = select_mask_with_highest_overlap(class_out_mask, label_)
+            volume_mask.append(best_masks)
 
             for x in range(best_masks.shape[0]):
                 class_metrics_ = SegMetrics(best_masks[x : x+1], label_[x : x+1], args.metrics)  #1 slice产生class个特征图
                 slice_iou[x] += class_metrics_[0]
                 slice_dice[x] += class_metrics_[1]
 
+        if len(slice_iou) == 1:
+            save_img3d(torch.cat(volume_mask, dim=0), label, image[:,0,...], save_path, batch_input['name'][0])
+
         for y in range(len(slice_iou)):
             slice_iou[y] /= image.shape[0]
             slice_dice[y] /= image.shape[0]
 
-        loggers.info(f"{batch_input['name'][0]} volume {len(slice_iou)} category IoU: {slice_iou}, Dice: {slice_dice}")
+        loggers.info(f"{batch_input['name'][0]} volume {len(slice_iou)} category IoU: {slice_iou}")
+        loggers.info(f"{batch_input['name'][0]} volume {len(slice_dice)} category Dice: {slice_dice}")
 
         mean_iou.append(slice_iou)
         mean_dice.append(slice_dice)
+
 
     iou = np.array(mean_iou).mean(axis=0)
     dice = np.array(mean_dice).mean(axis=0)
     for i in range(len(iou)):
         iou[i] = '{:.4f}'.format(iou[i])
         dice[i] = '{:.4f}'.format(dice[i])
-    loggers.info(f"{len(mean_iou)} volume mIoU: {iou}, mDice: {dice}")
-
+    loggers.info(f"{len(mean_iou)} volume mIoU: {iou}")
+    loggers.info(f"{len(mean_dice)} volume mDice: {dice}")
 
 
 
