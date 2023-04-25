@@ -51,7 +51,6 @@ class Data_Loader(Dataset):
         image = nib.load(self.imgs_path[index]).get_fdata()
         mask = nib.load(self.label_path[index]).get_fdata()
 
-
         if image.shape[-1] < (self.image_size * 0.5) and self.dim != 'z':
             self.dim = 'z'
             print("We want the number of 'z' axes to be at least larger than (image size: %s * 0.5)"%self.image_size)
@@ -61,17 +60,20 @@ class Data_Loader(Dataset):
 
         target_size = (self.image_size, self.image_size)
         if self.dim == 'z':
+            origin_slice = mask.shape[2]
             nonzero_slices = np.where(np.any(mask, axis=(0, 1)))[0]
             select_image = image[:, :, nonzero_slices]
             selcet_mask = mask[:, :, nonzero_slices]
 
         else:
             if self.dim == 'x':
+                origin_slice = mask.shape[0]
                 nonzero_slices = np.where(np.any(mask, axis=(1, 2)))[0]
                 select_image = image[nonzero_slices, :, :].transpose(1,2,0)
                 selcet_mask = mask[nonzero_slices, :, :].transpose(1,2,0)
 
             else:
+                origin_slice = mask.shape[1]
                 nonzero_slices = np.where(np.any(mask, axis=(0, 2)))[0]
                 select_image = image[:, nonzero_slices, :].transpose(0,2,1)
                 selcet_mask = mask[:,nonzero_slices, :].transpose(0,2,1)
@@ -104,11 +106,12 @@ class Data_Loader(Dataset):
         if class_num == 2:
             label = np.expand_dims(volume_masks, axis=1)
         else:
-
             eye = np.eye(class_num, dtype=volume_masks.dtype)
             label = eye[volume_masks].transpose(0, 3, 1, 2)[:,1:,...]
 
         image_input["label"] = label
+        S, C, H, W = image_input["label"].shape
+        zero_mask = torch.zeros((origin_slice, C, H, W), dtype=torch.int)
 
 
         class_num = len(np.unique(selcet_mask))
@@ -195,10 +198,11 @@ class Data_Loader(Dataset):
 
         image_name = self.imgs_path[index].split('/')[-1]
         image_input["dim"] = self.dim
+        image_input["zero_mask"] = zero_mask
+        image_input["index"] = nonzero_slices
 
         if self.requires_name:
             image_input["name"] = image_name
-
 
             return image_input
         else:
@@ -210,7 +214,7 @@ class Data_Loader(Dataset):
 
 
 if __name__ == "__main__":
-    train_dataset = Data_Loader("datasets/Myops2020/", image_size=256, prompt_point=True, prompt_box=True, dim='x',)
+    train_dataset = Data_Loader("datasets/autoPET/", image_size=256, prompt_point=True, prompt_box=True, dim='x',)
     print("数据个数：", len(train_dataset))
     train_batch_sampler = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=1, shuffle=False)
     for batched_image in (train_batch_sampler):
