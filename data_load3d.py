@@ -56,8 +56,6 @@ class Data_Loader(Dataset):
             print("We want the number of 'z' axes to be at least larger than (image size: %s * 0.5)"%self.image_size)
             print('Can only be tested on the "z" axis! image size:', image.shape)
 
-
-
         target_size = (self.image_size, self.image_size)
         if self.dim == 'z':
             origin_slice = mask.shape[2]
@@ -93,7 +91,6 @@ class Data_Loader(Dataset):
         volume_images = np.stack(volume_image, axis=0)
         volume_masks = np.stack(volume_mask, axis=0)
 
-
         if len(volume_images.shape)<4:
             volume_images = np.expand_dims(volume_images, axis=0)
 
@@ -112,38 +109,6 @@ class Data_Loader(Dataset):
         image_input["label"] = label
         S, C, H, W = image_input["label"].shape
         zero_mask = torch.zeros((origin_slice, C, H, W), dtype=torch.int)
-
-
-        class_num = len(np.unique(selcet_mask))
-        resized_image = cv2.resize(select_image, target_size, cv2.INTER_NEAREST)
-        resized_mask = cv2.resize(selcet_mask, target_size, cv2.INTER_NEAREST).astype(np.int)
-
-        volume_image = []
-        volume_mask = []
-        for i in range(resized_image.shape[-1]):
-            volume_image.append(np.repeat(resized_image[..., i:i + 1], repeats=3, axis=-1))
-            volume_mask.append(resized_mask[..., i])
-
-        volume_images = np.stack(volume_image, axis=0)
-        volume_masks = np.stack(volume_mask, axis=0)
-
-        if len(volume_images.shape) < 4:
-            volume_images = np.expand_dims(volume_images, axis=0)
-
-        if len(volume_masks.shape) < 3:
-            volume_masks = np.expand_dims(volume_masks, axis=0)
-
-        copy_img = copy_image(volume_images, class_num - 1)
-        image_input["image"] = copy_img
-
-        if class_num == 2:
-            label = np.expand_dims(volume_masks, axis=1)
-        else:
-            eye = np.eye(class_num, dtype=volume_masks.dtype)
-            label = eye[volume_masks].transpose(0, 3, 1, 2)[:, 1:, ...]
-
-        image_input["label"] = label
-
 
         if self.prompt_point and class_num == 2:
             points, point_labels = [], []
@@ -196,7 +161,7 @@ class Data_Loader(Dataset):
             boxes = torch.stack(boxes_, dim=0)
             image_input["boxes"] = boxes
 
-        image_name = self.imgs_path[index].split('/')[-1]
+        image_name = self.imgs_path[index].split('\\')[-1]
         image_input["dim"] = self.dim
         image_input["zero_mask"] = zero_mask
         image_input["index"] = nonzero_slices
