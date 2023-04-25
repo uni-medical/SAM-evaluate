@@ -240,5 +240,7 @@ if __name__ == "__main__":
     if len(args.device_ids) > 1:
         print("Let's use", len(args.device_ids), "GPUs!")
         model = nn.DataParallel(model, device_ids=args.device_ids)
-    predictor = SamPredictor(model.module.to(args.device))
+        predictor = SamPredictor(model.module.to(args.device))
+    else:
+        predictor = SamPredictor(model.to(args.device))
     evaluate_batch_images(args, predictor)
