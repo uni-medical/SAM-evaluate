@@ -9,6 +9,7 @@ from matplotlib import pyplot as plt
 import random
 import nibabel as nib
 from data_load import random_point_sampling, get_box
+import json
 
 def copy_image(image_matrix, num_class):
     out_matrix = np.tile(image_matrix[:,np.newaxis,:,:,:], (1, num_class, 1, 1, 1))
@@ -81,7 +82,7 @@ class Data_Loader(Dataset):
                 selcet_mask = mask[:,nonzero_slices, :].transpose(0,2,1)
 
 
-        class_num = len(np.unique(selcet_mask))
+        class_num = self.num_class
         max_pixel = select_image.max()
         min_pixel = select_image.min()
         select_image = (255 * (select_image - min_pixel) / (max_pixel - min_pixel)).astype(np.uint8)
