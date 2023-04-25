@@ -229,6 +229,4 @@ if __name__ == "__main__":
         predictor = SamPredictor(model.module.to(args.device))
     else:
         predictor = SamPredictor(model.to(args.device))
- 
-    predictor = SamPredictor(model.module.to(args.device))
     evaluate_batch_images(args, predictor)
