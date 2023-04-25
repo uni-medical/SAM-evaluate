@@ -33,6 +33,10 @@ class Data_Loader(Dataset):
         else:
             self.imgs_path = glob.glob(os.path.join(data_path, 'imagesTr/*.nii.gz'))
             self.label_path = glob.glob(os.path.join(data_path, 'labelsTr/*.nii.gz'))
+        
+        with open(os.path.join(data_path, 'dataset.json'), 'r') as f:
+            data = json.load(f)
+        self.num_class = len(data['labels'])
 
         self.imgs_path.sort()
         self.label_path.sort()
