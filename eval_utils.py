@@ -82,37 +82,31 @@ def select_mask_with_highest_overlap(mask: torch.Tensor, label: torch.Tensor) ->
     return out_mask, out_overlap_score
 
 
-def save_img3d(predict_overlap, label, image, save_path, mask_name):
+def save_img3d(predict_overlap, save_path, mask_name, zero_mask, index):   #zero_mask [168, 4, 256, 256]   index [67]
 
     if predict_overlap.dtype == torch.bool:
-        predict_overlap = predict_overlap.type(torch.int)
+        predict_overlap = predict_overlap.type(torch.int) #class, slice, 256, 256
 
-    predict_overlap = predict_overlap.cpu().numpy() #C,1,256,256
-    label = label.cpu().numpy()  #C,1,256,256
-    image = image.cpu().numpy()[...,0]  #C,256,256,1
+    predict_overlap = predict_overlap.cpu().numpy()
+    zero_mask = zero_mask.cpu().numpy()
 
-
-    predict_overlap = np.moveaxis(np.squeeze(predict_overlap, axis=1), [0, 1, 2], [2, 0, 1])
-    label = np.moveaxis(np.squeeze(label, axis=1), [0, 1, 2], [2, 0, 1])
-    image = np.moveaxis(image, [0, 1, 2], [2, 0, 1])
-
-
-    save_overlap_path = os.path.join(save_path, 'overlap_masks')
-    save_label_path = os.path.join(save_path, 'masks')
-    save_image_path = os.path.join(save_path, 'images')
-
-
+    save_overlap_path = os.path.join(save_path, 'predict_masks')
     os.makedirs(save_overlap_path, exist_ok=True)
-    os.makedirs(save_label_path, exist_ok=True)
-    os.makedirs(save_image_path, exist_ok=True)
 
-    predict_overlap = nib.Nifti1Image(predict_overlap, affine=np.eye(4))
-    label = nib.Nifti1Image(label, affine=np.eye(4))
-    image = nib.Nifti1Image(image, affine=np.eye(4))
+    for i in range(predict_overlap.shape[0]): #class
+        pred = predict_overlap[i]
+        pred_ = np.moveaxis(pred, [0, 1, 2], [2, 0, 1])  #256, 256, 67
+        class_zero_mask = np.moveaxis(zero_mask[:,i,...], [0, 1, 2], [2, 0, 1])  #256, 256, 168
+        for item, value in enumerate(index):
+            class_zero_mask[:, :, value] = pred_[:, :, item]
 
-    nib.save(predict_overlap, os.path.join(save_overlap_path, mask_name))
-    nib.save(label, os.path.join(save_label_path, mask_name))
-    nib.save(image, os.path.join(save_image_path, mask_name))
+        if predict_overlap.shape[0] == 1:
+            save_name = mask_name
+        else:
+            save_name = mask_name.split('.nii.gz')[0] + '_' + str(i+1).zfill(3) + '.nii.gz'
+
+        predict = nib.Nifti1Image(class_zero_mask, affine=np.eye(4))
+        nib.save(predict, os.path.join(save_overlap_path, save_name))
 
 
 
