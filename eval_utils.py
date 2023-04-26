@@ -109,7 +109,6 @@ def save_img3d(predict_overlap, save_path, mask_name, zero_mask, index):   #zero
         nib.save(predict, os.path.join(save_overlap_path, save_name))
 
 
-
 def save_img(predict_score, predict_overlap, label, save_path, mask_name):
 
     if predict_score.dtype == torch.bool:
@@ -132,9 +131,7 @@ def save_img(predict_score, predict_overlap, label, save_path, mask_name):
     os.makedirs(save_overlap_path, exist_ok=True)
     os.makedirs(save_label_path, exist_ok=True)
 
-    score_paths = [os.path.join(save_score_path, name) for name in mask_name]
-    overlap_paths = [os.path.join(save_overlap_path, name) for name in mask_name]
-    label_paths = [os.path.join(save_label_path, name) for name in mask_name]
+
 
     for i in range(N):
         pr_score_img = np.squeeze(predict_score[i])
@@ -145,12 +142,15 @@ def save_img(predict_score, predict_overlap, label, save_path, mask_name):
         pr_overlap_img = Image.fromarray(np.uint8(pr_overlap_img * 255))
         label_img = Image.fromarray(np.uint8(label_img * 255))
 
-        pr_score_img.save(score_paths[i])
-        pr_overlap_img.save(overlap_paths[i])
-        label_img.save(label_paths[i])
-        #io.imsave(score_paths[i], (pr_score_img * 255).astype('uint8'))
-        #io.imsave(overlap_paths[i], (pr_overlap_img * 255).astype('uint8'))
-        #io.imsave(label_paths[i], (label_img * 255).astype('uint8'))
+        if predict_overlap.shape[0] == 1:
+            save_name = mask_name
+        else:
+            save_name = mask_name.split('.')[0] + '_' + str(i+1).zfill(3) + '.png'
+
+        pr_score_img.save(os.path.join(save_score_path, save_name))
+        pr_overlap_img.save(os.path.join(save_overlap_path, save_name))
+        label_img.save(os.path.join(save_label_path, save_name))
+
 
 
 def iou(pr, gt, eps=1e-7):
