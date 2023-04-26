@@ -131,12 +131,11 @@ def evaluate_batch_images(args, model):
     score_metric = [0] * len(args.metrics)
     overlap_metric =[0] * len(args.metrics)
     score_metrics, overlap_metrics = {}, {}
-    a = 0
+
     for i, batch_input in enumerate(progress_bar):
         batch_image = batch_input['image']         #B, Class, H, W, 3
-        batch_mask, batch_score = [], []
+
         for i in range(batch_image.shape[0]):     #1, class, H, W, 3
-            a += 1
             class_mask, class_score = [], []
             for j in range(batch_image.shape[1]):
                 image = batch_image[i][j].cpu().numpy().astype(np.uint8)
