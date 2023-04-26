@@ -14,23 +14,22 @@ import torch
 
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
-
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=1, help="train batch size")
     parser.add_argument("--image_size", type=int, default=256, help="image_size")
-    parser.add_argument("--data_path", type=str, default='datasets/autoPET/',help="eval data path")
+    parser.add_argument("--data_path", type=str, default='mount_preprocessed_sam/3d/semantic_seg/mr_cbf/ISLES_SPES/',help="eval data path")
     parser.add_argument("--dim", type=str, default='z', help="testing dim, default 'z' ")
     parser.add_argument("--metrics", nargs='+', default=['iou', 'dice'], help="metrics")
-    parser.add_argument("--device_ids", nargs='+', type=int, default=[0,1], help="device_ids")
+    parser.add_argument("--device_ids", nargs='+', type=int, default=[0,1,2,3], help="device_ids")
     parser.add_argument("--model_type", type=str, default="vit_h", help="sam model_type")
-    parser.add_argument("--sam_checkpoint", type=str, default="pretrain_model/sam_vit_h_4b8939.pth",help="sam checkpoint")
-    parser.add_argument("--include_prompt_point", type=bool, default=True, help="need point prompt")
+    parser.add_argument("--sam_checkpoint", type=str, default="Evaluate-SAM/pretrain_model/sam_vit_h_4b8939.pth",help="sam checkpoint")
+    parser.add_argument("--include_prompt_point", type=bool, default=False, help="need point prompt")
     parser.add_argument("--num_point", type=int, default=1, help="point or point number")
     parser.add_argument("--include_prompt_box", type=bool, default=True, help="need boxes prompt")
     parser.add_argument("--num_boxes", type=int, default=1, help="boxes or boxes number")
     parser.add_argument("--multimask_output", type=bool, default=True, help="multimask output")
-    parser.add_argument("--save_path", type=str, default='save_datasets/3d/autoPET/',
+    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/3d/ISLES_SPES/',
                         help="save data path")
     args = parser.parse_args()
 
@@ -94,17 +93,18 @@ def evaluate_batch_images(args, model):
 
     train_loader = DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=False, num_workers=32)
     progress_bar = tqdm(train_loader)
-    dim = next(iter(progress_bar))['dim'][0]
-
+    #dim = next(iter(progress_bar))['dim'][0]
+    #print(dim)
+	
     save_path = os.path.join(args.save_path,
-                             f"{dim}_{args.image_size}"
+                             f"{args.dim}_{args.image_size}"
                              f"_{'boxes' if args.include_prompt_box else 'points'}"
                              f"_{args.num_boxes if args.include_prompt_box else args.num_point}")
 
     os.makedirs(save_path, exist_ok=True)
 
     txt_path = os.path.join(save_path,
-                            f"{dim}_{args.image_size}"
+                            f"{args.dim}_{args.image_size}"
                             f"_{'boxes' if args.include_prompt_box else 'points'}"
                             f"_{args.num_boxes if args.include_prompt_box else args.num_point}.txt")
 
@@ -182,8 +182,9 @@ def evaluate_batch_images(args, model):
 
                 class_mask.append(masks)
 
-            class_out_mask = torch.stack(class_mask, dim=0).to(device)  #class, 1, h, w
-
+            class_out_mask = torch.stack(class_mask, dim=0).to(device)  #class, 3, h, w
+            
+      
             label_ = label[i].unsqueeze(1).to(device)      #class, 1, h, w
 
             best_masks, overlap_score = select_mask_with_highest_overlap(class_out_mask, label_)
@@ -205,7 +206,6 @@ def evaluate_batch_images(args, model):
 
         mean_iou.append(slice_iou)
         mean_dice.append(slice_dice)
-
 
     iou = np.array(mean_iou).mean(axis=0)
     dice = np.array(mean_dice).mean(axis=0)
