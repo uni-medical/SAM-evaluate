@@ -34,7 +34,7 @@ class Data_Loader(Dataset):
         else:
             self.imgs_path = glob.glob(os.path.join(data_path, 'imagesTr/*.nii.gz'))
             self.label_path = glob.glob(os.path.join(data_path, 'labelsTr/*.nii.gz'))
-        
+
         with open(os.path.join(data_path, 'dataset.json'), 'r') as f:
             data = json.load(f)
         self.num_class = len(data['labels'])
@@ -87,7 +87,7 @@ class Data_Loader(Dataset):
         min_pixel = select_image.min()
         select_image = (255 * (select_image - min_pixel) / (max_pixel - min_pixel)).astype(np.uint8)
         resized_image = cv2.resize(select_image, target_size, cv2.INTER_NEAREST)
-        resized_mask = cv2.resize(selcet_mask, target_size, cv2.INTER_NEAREST).astype(np.int)
+        resized_mask = cv2.resize(selcet_mask, target_size, cv2.INTER_NEAREST).astype(np.int16)
 
         volume_image = []
         volume_mask = []
@@ -117,54 +117,26 @@ class Data_Loader(Dataset):
         S, C, H, W = image_input["label"].shape
         zero_mask = torch.zeros((origin_slice, C, H, W), dtype=torch.int)
 
-        if self.prompt_point and class_num == 2:
-            points, point_labels = [], []
-            for i in range(label.shape[0]):
-                point, point_label = random_point_sampling(label[i][0], point_num=self.point_num)
-                points.append(point)
-                point_labels.append(point_label)
-            points = torch.stack(points, dim=0)
-            point_labels = torch.stack(point_labels, dim=0)
-            image_input["point_coords"] = points.unsqueeze(1)
-            image_input["point_labels"] = point_labels.unsqueeze(1)
 
         #image (slice, class-1, H, W, 3)
         #label (slice, class-1, H, W)
-        if self.prompt_point and class_num > 2:
+        if self.prompt_point:
             points, point_labels = [], []
             for i in range(label.shape[0]): #切片
-                class_point, class_point_label = [], []
-                for j in range(label.shape[1]): #类别
-                    point, point_label = random_point_sampling(label[i][j], point_num=self.point_num)
-                    class_point.append(point)
-                    class_point_label.append(point_label)
-
-                points.append(torch.stack(class_point, dim=0))
-                point_labels.append(torch.stack(class_point_label, dim=0))
+                point, point_label = random_point_sampling(label[i], point_num=self.point_num)
+                points.append(point)
+                point_labels.append(point_label)
 
             points_ = torch.stack(points, dim=0)
             point_labels_ = torch.stack(point_labels, dim=0)
-
             image_input["point_coords"] = points_
             image_input["point_labels"] = point_labels_
 
-
-        if self.prompt_box and class_num == 2:
-            boxes = []
-            for i in range(label.shape[0]):
-                box = get_box(label[i][0], num_classes=self.boxes_num)
-                boxes.append(box)
-            boxes = torch.stack(boxes, dim=0)
-            image_input["boxes"] = boxes.unsqueeze(1)
-
-        if self.prompt_point and class_num > 2:
+        if self.prompt_box:
             boxes_ = []
             for i in range(label.shape[0]): #切片
-                class_box = []
-                for j in range(label.shape[1]): #类别
-                    box = get_box(label[i][0], num_classes=self.boxes_num)
-                    class_box.append(box)
-                boxes_.append(torch.stack(class_box, dim=0))
+                box = get_box(label[i], num_classes=self.boxes_num)
+                boxes_.append(box)
             boxes = torch.stack(boxes_, dim=0)
             image_input["boxes"] = boxes
 
@@ -186,14 +158,12 @@ class Data_Loader(Dataset):
 
 
 if __name__ == "__main__":
-    train_dataset = Data_Loader("datasets/autoPET/", image_size=256, prompt_point=True, prompt_box=True, dim='x',)
+    train_dataset = Data_Loader("mount_preprocessed_sam/3d/semantic_seg/mr_adc/ISLES2016/", image_size=256, prompt_point=True, prompt_box=True, dim='x',)
     print("数据个数：", len(train_dataset))
     train_batch_sampler = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=1, shuffle=False)
     for batched_image in (train_batch_sampler):
-        print('*'*20)
+        print(batched_image['name'])
         print(batched_image['image'].shape)
         print(batched_image['label'].shape)
-        print(batched_image.get('point_coords', None).shape)
-        print(batched_image.get('point_labels', None).shape)
-        print(batched_image.get('boxes', None).shape)
-        print(batched_image['dim'])
+        print(batched_image['boxes'].shape)
+        print('*'*20)
