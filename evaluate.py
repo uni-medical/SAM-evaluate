@@ -132,7 +132,7 @@ def evaluate_batch_images(args, model):
     overlap_metric =[0] * len(args.metrics)
     score_metrics, overlap_metrics = {}, {}
 
-    for i, batch_input in enumerate(progress_bar):
+    for batch_input in progress_bar:
         batch_image = batch_input['image']         #B, Class, H, W, 3
 
         for i in range(batch_image.shape[0]):     #1, class, H, W, 3
