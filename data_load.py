@@ -249,15 +249,15 @@ def mask_to_one_hot(mask, num_classes):
 
 class Data_Loader(Dataset):
     def __init__(self, 
-    data_path, 
-    image_size = None, 
-    requires_name = True, 
-    mode = 'train', 
-    prompt_point=True, 
-    prompt_box=True, 
-    num_boxes = 3, 
-    num_point = 3,
-    ):
+                        data_path, 
+                        image_size = None, 
+                        requires_name = True, 
+                        mode = 'train', 
+                        prompt_point=True, 
+                        prompt_box=True, 
+                        num_boxes = 3, 
+                        num_point = 3,
+                        ):
         # 初始化函数，读取所有data_path下的图片
         self.image_size = image_size
         self.data_path = data_path
@@ -286,11 +286,10 @@ class Data_Loader(Dataset):
         image = cv2.imread(self.imgs_path[index])
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         mask = cv2.imread(self.label_path[index], 0)
-  
+   
         # 读取训练图片和标签图片
         augments = self.transforms(image=image, mask=mask)
         image, mask = augments['image'], augments['mask'].astype(np.int64)
-
 
         image = np.repeat(np.expand_dims(image, axis=0), repeats=self.num_class-1, axis=0)
         mask = mask_to_one_hot(mask, self.num_class)[1:]
@@ -321,7 +320,7 @@ class Data_Loader(Dataset):
 
 
 if __name__ == "__main__":
-    train_dataset = Data_Loader('mount_preprocessed_sam/2d/semantic_seg/microscopy/CellTracking2d/', image_size=1024, mode='val', prompt_point=True, prompt_box=True)
+    train_dataset = Data_Loader('mount_preprocessed_sam/2d/semantic_seg/mr/UW-Madison/', image_size=1024, mode='val', prompt_point=True, prompt_box=True)
     print("数据个数：", len(train_dataset))
     train_batch_sampler = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=4, shuffle=False)
     for batched_image in (train_batch_sampler):
