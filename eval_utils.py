@@ -6,6 +6,18 @@ import skimage.io as io
 from PIL import Image
 import nibabel as nib
 import logging
+import torchvision
+
+
+def select_label(labels):
+    if len(labels.shape) == 4:
+        labels = labels.squeeze(1)
+
+    channel_sums = labels.sum(dim=(1, 2))
+    all_zeros = (channel_sums == 0.0)
+    keep_indices = torch.arange(labels.shape[0])[~all_zeros]
+    output_tensor = labels[keep_indices, ...]
+    return output_tensor, keep_indices
 
 
 def get_logger(filename, verbosity=1, name=None):
@@ -50,16 +62,16 @@ def select_mask_with_highest_iouscore(mask, iou):
     Returns the mask with highest IoU score.
 
     Args:
-        mask (tensor): tensor of shape [B, N, C, H, W] containing the masks to select from.
+        mask (tensor): tensor of shape [B, N, H, W] containing the masks to select from.
         iou (tensor): tensor of shape [B, N] containing the IoU scores.
 
     Returns:
         selected_mask (tensor): tensor of shape [B, C, H, W] containing the mask with the highest IoU score.
     """
-    B, N, C, H, W = mask.shape
+    B, N, H, W = mask.shape
     max_iou, max_idx = torch.max(iou, dim=1, keepdim=True)
     max_idx = max_idx.long()
-    selected_mask = torch.gather(mask, dim=1, index=max_idx.unsqueeze(2).unsqueeze(2).repeat(1, 1, 1, H, W))
+    selected_mask = torch.gather(mask, dim=1, index=max_idx.unsqueeze(2).unsqueeze(2).repeat(1, 1, H, W))
     selected_mask = selected_mask.squeeze(1)
     return selected_mask
 
@@ -88,6 +100,8 @@ def select_mask_with_highest_overlap(mask: torch.Tensor, label: torch.Tensor) ->
         out_mask: shape (n,h,w)
         out_overlap_score: shape (b,n)
     """
+
+
     selected_mask = []
     overlap_score = []
     for i in range(label.shape[0]):  # Batch
@@ -131,19 +145,13 @@ def save_img3d(predict_overlap, save_path, mask_name, zero_mask, index):   #zero
         nib.save(predict, os.path.join(save_overlap_path, save_name))
 
 
-def save_img(predict_score, predict_overlap, label, save_path, mask_name):
-
-    if predict_score.dtype == torch.bool:
-        predict_score = predict_score.type(torch.int)
-
-    if predict_overlap.dtype == torch.bool:
-        predict_overlap = predict_overlap.type(torch.int)
-
+def save_img(predict_score, predict_overlap, label, save_path, mask_name, class_idex, origin_size):
     predict_score = predict_score.cpu().numpy()
     predict_overlap = predict_overlap.cpu().numpy()
     label = label.cpu().numpy()
+    class_idex = class_idex.cpu().numpy()
 
-    N, C, H, W = predict_score.shape
+    N, H, W = predict_score.shape
 
     save_score_path = os.path.join(save_path, 'score_masks')
     save_overlap_path = os.path.join(save_path, 'overlap_masks')
@@ -153,27 +161,30 @@ def save_img(predict_score, predict_overlap, label, save_path, mask_name):
     os.makedirs(save_overlap_path, exist_ok=True)
     os.makedirs(save_label_path, exist_ok=True)
 
-
-
+    trans_totensor = torchvision.transforms.ToTensor()
+    resize_score, resize_overlap, resize_label = [], [], []
     for i in range(N):
-        pr_score_img = np.squeeze(predict_score[i])
-        pr_overlap_img = np.squeeze(predict_overlap[i])
-        label_img = np.squeeze(label[i])
+        score_img = Image.fromarray(np.uint8(predict_score[i] * 255))
+        overlap_img = Image.fromarray(np.uint8(predict_overlap[i] * 255))
+        label_img = Image.fromarray(np.uint8(label[i] * 255))
+        
+        resized_score_img = score_img.resize(origin_size, resample=Image.NEAREST)
+        resized_overlap_img = overlap_img.resize(origin_size, resample=Image.NEAREST)
+        resized_label_img = label_img.resize(origin_size, resample=Image.NEAREST)
 
-        pr_score_img = Image.fromarray(np.uint8(pr_score_img * 255))
-        pr_overlap_img = Image.fromarray(np.uint8(pr_overlap_img * 255))
-        label_img = Image.fromarray(np.uint8(label_img * 255))
+        save_name = mask_name.split('.')[0] + '_' + str(class_idex[i]+1).zfill(3) + '.png'
+        resized_score_img.save(os.path.join(save_score_path, save_name))
+        resized_overlap_img.save(os.path.join(save_overlap_path, save_name))
+        resized_label_img.save(os.path.join(save_label_path, save_name))
 
-        if predict_overlap.shape[0] == 1:
-            save_name = mask_name
-        else:
-            save_name = mask_name.split('.')[0] + '_' + str(i+1).zfill(3) + '.png'
+        resize_score.append(trans_totensor(resized_score_img))
+        resize_overlap.append(trans_totensor(resized_overlap_img))
+        resize_label.append(trans_totensor(resized_label_img))
 
-        pr_score_img.save(os.path.join(save_score_path, save_name))
-        pr_overlap_img.save(os.path.join(save_overlap_path, save_name))
-        label_img.save(os.path.join(save_label_path, save_name))
-
-
+    resize_scores = torch.stack(resize_score, dim=0).unsqueeze(1) / 255.
+    resize_overlaps = torch.stack(resize_overlap, dim=0).unsqueeze(1) / 255.
+    resize_labels = torch.stack(resize_label, dim=0).unsqueeze(1) / 255.
+    return resize_scores, resize_overlaps, resize_labels
 
 def iou(pr, gt, eps=1e-7):
 
