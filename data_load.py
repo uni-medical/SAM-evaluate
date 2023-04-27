@@ -10,6 +10,7 @@ from skimage.measure import label, regionprops
 from matplotlib import pyplot as plt
 import random
 import json
+from torch.utils.data import DataLoader
 
 def show_mask(mask, ax, random_color=False):
     if random_color:
@@ -270,7 +271,7 @@ class Data_Loader(Dataset):
             data = json.load(f)
         key = data_path.split('/')[-1]
         self.num_class = data[key]
-
+#         self.num_class = 4
         self.imgs_path.sort()
         self.label_path.sort()
         self.transforms = transforms(image_size)
@@ -282,12 +283,14 @@ class Data_Loader(Dataset):
 
     def __getitem__(self, index):
         image_input = {}
+
         # 根据index读取图片
         image = cv2.imread(self.imgs_path[index])
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         mask = cv2.imread(self.label_path[index], 0)
-   
-        # 读取训练图片和标签图片
+
+        image_input['original_size'] = tuple(mask.shape)
+        
         augments = self.transforms(image=image, mask=mask)
         image, mask = augments['image'], augments['mask'].astype(np.int64)
 
@@ -319,15 +322,23 @@ class Data_Loader(Dataset):
         return len(self.imgs_path)
 
 
+def get_origin_size(torch_original_size):
+    new_tuple = zip(torch_original_size[0].cpu().numpy(), torch_original_size[1].cpu().numpy())
+    origin_size = [tuple(x) for x in new_tuple]
+    return origin_size
+
+
 if __name__ == "__main__":
     train_dataset = Data_Loader('mount_preprocessed_sam/2d/semantic_seg/mr/UW-Madison/', image_size=1024, mode='val', prompt_point=True, prompt_box=True)
     print("数据个数：", len(train_dataset))
-    train_batch_sampler = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=4, shuffle=False)
+    train_batch_sampler = DataLoader(dataset=train_dataset, batch_size=8, shuffle=False)
     for batched_image in (train_batch_sampler):
         print('*'*10)
         print(batched_image['image'].shape)
         print(batched_image['label'].shape)
         print(batched_image['point_coords'].shape)
         print(batched_image['point_labels'].shape)
+        get_origin_size(batched_image['original_size'])
+
         # print(torch.unique(batched_image['label']))
         # print(batched_image.get('boxes', None))
