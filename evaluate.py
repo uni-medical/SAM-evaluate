@@ -6,16 +6,16 @@ from typing import Tuple
 from eval_utils import *
 import argparse
 import torch.nn as nn
-import logging
+import torch.nn.functional as F
 
 
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size", type=int, default=12, help="train batch size")
+    parser.add_argument("--batch_size", type=int, default=8, help="train batch size")
     parser.add_argument("--image_size", type=int, default=1024, help="image_size")
-    parser.add_argument("--data_path", type=str, default='mount_preprocessed_sam/2d/semantic_seg/fundus_photography/gamma/', help="eval data path")
+    parser.add_argument("--data_path", type=str, default='mount_preprocessed_sam/2d/semantic_seg/mr/UW-Madison/', help="eval data path")
     parser.add_argument("--data_mode", type=str, default='val', help="eval train or test data")
     parser.add_argument("--metrics", nargs='+', default=['acc', 'iou', 'dice', 'sens', 'spec'], help="metrics")
     parser.add_argument("--device_ids", nargs='+', type=int, default=[0, 1, 2, 3], help="device_ids")
@@ -26,11 +26,10 @@ def parse_args():
     parser.add_argument("--include_prompt_box", type=bool, default=True, help="need boxes prompt")
     parser.add_argument("--num_boxes", type=int, default=1, help="boxes or boxes number")
     parser.add_argument("--multimask_output", type=bool, default=True, help="multimask output")
-    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/gamma/', help="save data path")
+    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/2d/UW-Madison/', help="save data path")
     args = parser.parse_args()
 
     return args
-
 
 
 def show_mask(mask, ax, random_color=False):
@@ -57,23 +56,7 @@ def show_box(box, ax):
     w, h = box[2] - box[0], box[3] - box[1]
     ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0, 0, 0, 0), lw=2))
 
-def get_logger(filename, verbosity=1, name=None):
-    level_dict = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING}
-    formatter = logging.Formatter(
-        "[%(asctime)s][%(filename)s][line:%(lineno)d][%(levelname)s] %(message)s"
-    )
-    logger = logging.getLogger(name)
-    logger.setLevel(level_dict[verbosity])
 
-    fh = logging.FileHandler(filename, "w")
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
-
-    sh = logging.StreamHandler()
-    sh.setFormatter(formatter)
-    logger.addHandler(sh)
-
-    return logger
 
 def evaluate_batch_images(args, model):
     """
@@ -175,35 +158,39 @@ def evaluate_batch_images(args, model):
                 masks = torch.as_tensor(masks, dtype=torch.int)
                 scores = torch.as_tensor(scores, dtype=torch.float)
 
-                if len(masks) == 3:
-                    masks = masks.unsqueeze(1)
-                    scores = scores.unsqueeze(1)
-
-                elif len(masks) == 4:
-                    masks = masks
-                    scores = scores
-
                 class_mask.append(masks)
                 class_score.append(scores)
 
+            class_out_mask = torch.stack(class_mask, dim=0)  #class, 3, 1, H, W
+            class_out_iou = torch.stack(class_score, dim=0)  #class, 3, 1
+     
+            label = batch_input["label"][i]     #3, H, W
+            select_labels, class_idex = select_label(label)  #实际class, H, W  ——> 2, H, W
+            
+            select_class_outmask = class_out_mask[class_idex, ...]
+            select_class_outiou = class_out_iou[class_idex, ...]
 
-            class_out_mask = torch.stack(class_mask, dim=0).to(device)
-            class_out_iou = torch.stack(class_score, dim=0).to(device)
-            label = batch_input["label"][i].unsqueeze(1).to(device)
+            best_iouscore_masks = select_mask_with_highest_iouscore(select_class_outmask, select_class_outiou)
+            best_overlap_masks, overlap_score = select_mask_with_highest_overlap(select_class_outmask, select_labels)
+       
+            origin_size = get_origin_size(batch_input['original_size'])
 
-            best_iouscore_masks = select_mask_with_highest_iouscore(class_out_mask, class_out_iou)
-            best_overlap_masks, overlap_score = select_mask_with_highest_overlap(class_out_mask, label)
-      
-            save_img(best_iouscore_masks, best_overlap_masks, label, save_path, batch_input['name'][i])  #class, 1, H, W
+            resize_scores, resize_overlaps, resize_labels = save_img(best_iouscore_masks, 
+                                                                    best_overlap_masks, 
+                                                                    select_labels, 
+                                                                    save_path, 
+                                                                    batch_input['name'][i], 
+                                                                    class_idex, 
+                                                                    origin_size[i])  #class, H, W
 
-            class_score_metrics_ = SegMetrics(best_iouscore_masks, label, args.metrics)  #每张图片计算类别的 平均iou 和 dice
-            class_overlap_metrics_ = SegMetrics(best_overlap_masks, label, args.metrics) #每张图片计算类别的 平均iou 和 dice
-
+            class_score_metrics_ = SegMetrics(resize_scores, resize_labels, args.metrics)  #每张图片计算类别的 平均iou 和 dice
+            class_overlap_metrics_ = SegMetrics(resize_overlaps, resize_labels, args.metrics) #每张图片计算类别的 平均iou 和 dice
+            loggers.info(f"{batch_input['name'][i]} :\n iou score metrics: {class_score_metrics_}, overlap metrics: {class_overlap_metrics_}")
+            
             for i in range(len(args.metrics)):
                 score_metric[i] += class_score_metrics_[i]
                 overlap_metric[i] += class_overlap_metrics_[i]
 
-   
     for i, metr in enumerate(args.metrics):
         score_metrics[metr] = score_metric[i] / len(dataset)
         overlap_metrics[metr] = overlap_metric[i] / len(dataset)
@@ -214,11 +201,8 @@ def evaluate_batch_images(args, model):
 
     loggers.info(f"get metrics on masks through iou score:  {score_metrics}")
     loggers.info(f"get metrics on masks through overlap:  {overlap_metrics}")
-    # print('\n get metrics on masks through iou score:', score_metrics)
-    # print('\n get metrics on masks through overlap:', overlap_metrics)
 
     return
-
 
 
 
@@ -230,5 +214,7 @@ if __name__ == "__main__":
     if len(args.device_ids) > 1:
         print("Let's use", len(args.device_ids), "GPUs!")
         model = nn.DataParallel(model, device_ids=args.device_ids)
-    predictor = SamPredictor(model.module.to(args.device))
+        predictor = SamPredictor(model.module.to(args.device))
+    else:
+        predictor = SamPredictor(model.to(args.device))
     evaluate_batch_images(args, predictor)
