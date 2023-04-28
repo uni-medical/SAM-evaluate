@@ -181,7 +181,8 @@ def evaluate_batch_images(args, model):
                                                                     save_path, 
                                                                     batch_input['name'][i], 
                                                                     class_idex, 
-                                                                    origin_size[i])  #class, H, W
+                                                                    origin_size[i][::-1]
+                                                                    )  #class, H, W
 
             class_score_metrics_ = SegMetrics(resize_scores, resize_labels, args.metrics)  #每张图片计算类别的 平均iou 和 dice
             class_overlap_metrics_ = SegMetrics(resize_overlaps, resize_labels, args.metrics) #每张图片计算类别的 平均iou 和 dice
