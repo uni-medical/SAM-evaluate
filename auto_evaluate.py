@@ -1,9 +1,9 @@
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
-from data_load import Data_Loader
+from data_load import Data_Loader, get_origin_size
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from typing import Tuple
-from eval_utils import SegMetrics, get_logger
+from eval_utils import SegMetrics, get_logger, select_label
 import argparse
 import torch.nn as nn
 import os
@@ -11,24 +11,25 @@ import torch
 from matplotlib import pyplot as plt
 from PIL import Image
 import numpy as np
+import torchvision
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size", type=int, default=4, help="train batch size")
+    parser.add_argument("--batch_size", type=int, default=10, help="train batch size")
     parser.add_argument("--image_size", type=int, default=1024, help="image_size")
-    parser.add_argument("--data_path", type=str, default='mount_preprocessed_sam/2d/semantic_seg/dermoscopy/isic2017_task1/', help="eval data path")
+    parser.add_argument("--data_path", type=str, default='mount_preprocessed_sam/2d/semantic_seg/mr/UW-Madison/', help="eval data path")
     parser.add_argument("--data_mode", type=str, default='val', help="eval train or test data")
     parser.add_argument("--metrics", nargs='+', default=['acc', 'iou', 'dice', 'sens', 'spec'], help="metrics")
-    parser.add_argument("--device_ids", nargs='+', type=int, default=[0,1,2,3,4,5,6,7], help="device_ids")
+    parser.add_argument("--device_ids", nargs='+', type=int, default=[0, 1, 2, 3, 4, 5, 6, 7], help="device_ids")
     parser.add_argument("--model_type", type=str, default="vit_h", help="sam model_type")
     parser.add_argument("--sam_checkpoint", type=str, default="Evaluate-SAM/pretrain_model/sam_vit_h_4b8939.pth", help="sam checkpoint")
-    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/2d/isic2017_task1/', help="save data path")
+    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/2d/UW-Madison/', help="save data path")
     args = parser.parse_args()
 
     return args
 
 
-def save_img(predict, label, save_path, mask_name, class_idex):
+def save_img(predict, label, save_path, mask_name, class_idex, origin_size):
 
     predict = predict.cpu().numpy()
     label = label.cpu().numpy()
@@ -41,21 +42,27 @@ def save_img(predict, label, save_path, mask_name, class_idex):
     os.makedirs(save_pred_path, exist_ok=True)
     os.makedirs(save_label_path, exist_ok=True)
 
+    trans_totensor = torchvision.transforms.ToTensor()
+    resize_pred, resize_label = [], []
     for i in range(N):
         pred_img = Image.fromarray(np.uint8(predict[i] * 255))
         label_img = Image.fromarray(np.uint8(label[i] * 255))
 
         save_name = mask_name.split('.')[0] + '_' + str(class_idex[i]+1).zfill(3) + '.png'
 
-        pred_img.save(os.path.join(save_pred_path, save_name))
-        label_img.save(os.path.join(save_label_path, save_name))
-    
-def select_label(labels):
-    channel_sums = labels.sum(dim=(1, 2))
-    all_zeros = (channel_sums == 0.0)
-    keep_indices = torch.arange(labels.shape[0])[~all_zeros]
-    output_tensor = labels[keep_indices, :, :]
-    return output_tensor, keep_indices
+        resized_pred_img = pred_img.resize(origin_size, resample=Image.NEAREST)
+        resized_label_img = label_img.resize(origin_size, resample=Image.NEAREST)
+
+        resize_pred.append(trans_totensor(resized_pred_img))
+        resize_label.append(trans_totensor(resized_label_img))
+
+        resized_pred_img.save(os.path.join(save_pred_path, save_name))
+        resized_label_img.save(os.path.join(save_label_path, save_name))
+
+    resize_preds = torch.stack(resize_pred, dim=0).unsqueeze(1) / 255.
+    resize_labels = torch.stack(resize_label, dim=0).unsqueeze(1) / 255.
+    return resize_preds, resize_labels
+
 
 def label_mask_overlap(label, mask):
     N = label.shape[0]
@@ -120,9 +127,7 @@ def evaluate_batch_images(args, model):
 
     for batch_input in progress_bar:
         batch_image = batch_input['image']
- 
         for i in range(batch_image.shape[0]):  #class,H,W,3
-  
             for j in range(batch_image.shape[1]):  #1,H,W,3  
                 image = batch_image[i][j].cpu().numpy().astype(np.uint8)
                 masks = model.generate(image)
@@ -135,10 +140,17 @@ def evaluate_batch_images(args, model):
             class_masks = torch.as_tensor(np.stack(class_mask, axis=0), dtype=torch.int)
             select_masks = label_mask_overlap(select_labels, class_masks)                    #class, h, w
             
-            save_img(select_masks, select_labels, save_path, batch_input['name'][i], class_idex)
+            origin_size = get_origin_size(batch_input['original_size'])
+            resize_preds, resize_labels = save_img(select_masks, 
+                                                   select_labels, 
+                                                   save_path, 
+                                                   batch_input['name'][i], 
+                                                   class_idex,
+                                                   origin_size[i][::-1]
+                                                   )
 
-            class_metrics_ = SegMetrics(select_masks.unsqueeze(1), select_labels.unsqueeze(1), args.metrics)  #每张图片计算类别的 平均iou 和 dice
-            loggers.info(f"{batch_input['name'][i]} metrics: {class_metrics_}")
+            class_metrics_ = SegMetrics(resize_preds, resize_labels, args.metrics)  #每张图片计算类别的 平均iou 和 dice
+            loggers.info(f"{batch_input['name'][i]} metrics:\n {class_metrics_}")
             for i in range(len(args.metrics)):
                 class_metrics[i] += class_metrics_[i]
 
