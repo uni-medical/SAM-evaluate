@@ -3,7 +3,7 @@ from data_load3d import Data_Loader
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from typing import Tuple
-from eval_utils import save_img3d, select_mask_with_highest_iouscore, select_mask_with_highest_overlap, SegMetrics
+from eval_utils import save_img3d, select_mask_with_highest_iouscore, select_mask_with_highest_overlap, SegMetrics, is_saved
 import argparse
 import torch.nn as nn
 import logging
@@ -11,6 +11,7 @@ import os
 import numpy as np
 from matplotlib import pyplot as plt
 import torch
+from skimage.transform import resize
 
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
@@ -92,7 +93,7 @@ def evaluate_batch_images(args, model):
                           dim = args.dim,
                           )
 
-    train_loader = DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=False, num_workers=32)
+    train_loader = DataLoader(dataset=dataset, batch_size=1, shuffle=False, num_workers=32)
     progress_bar = tqdm(train_loader)
     dim = next(iter(progress_bar))['dim'][0]
 
@@ -116,8 +117,12 @@ def evaluate_batch_images(args, model):
     for batch_input in progress_bar:
         image = batch_input['image'][0]   #(1, slice, class, 256, 256, 3) or [1, slice, 1, 256, 256, 3]
         label = batch_input['label'][0]
+        ori_label = batch_input['ori_label'][0]
         zero_mask = batch_input['zero_mask'][0]
         index =  batch_input['index'][0]
+
+        if is_saved(save_path, batch_input['name'][0], ori_label.shape[1]):
+            continue
 
         if args.include_prompt_point:
             point_coord = batch_input['point_coords'][0]  #[1,slice, class, N, 2])
@@ -131,9 +136,9 @@ def evaluate_batch_images(args, model):
         else:
             boxs = None
 
-        slice_iou = [0] * image.shape[1]
-        slice_dice = [0] * image.shape[1]
-        volume_mask, volume_label = [],[]
+        volume_mask = []
+        volume_dict = {}
+        metric_dict = {}
         for i in range(image.shape[0]):  #slice
             class_mask= []
             for j in range(image.shape[1]): #class
@@ -172,43 +177,65 @@ def evaluate_batch_images(args, model):
                         multimask_output=args.multimask_output,
                     )
 
-                masks = torch.as_tensor(masks, dtype=torch.int)
+                masks = torch.as_tensor(masks, dtype=torch.int) # 3, h, w
+                
+                ori_masks = torch.zeros((masks.shape[0], *ori_label.shape[-2:]), dtype=torch.int) # 3, h, w
+                for k in range(masks.shape[0]):
+                    m = resize(masks[k].cpu().numpy().astype(float), ori_label.shape[-2:], 1, mode='edge', clip=True, anti_aliasing=False) # Follow nnUNet
+                    ori_masks[k, m >= 0.5] = 1
 
-                if len(masks) == 3:
-                    masks = masks.unsqueeze(1)
+                if len(ori_masks) == 3:
+                    ori_masks = ori_masks.unsqueeze(1) # 3, 1, h, w
+                elif len(ori_masks) == 4:
+                    ori_masks = ori_masks
 
-                elif len(masks) == 4:
-                    masks = masks
+                # class_mask.append(ori_masks)
+                ori_label_j = ori_label[i, j].unsqueeze(0).unsqueeze(0).to(device) # 1, 1, h, w
+                best_mask, overlap_score = select_mask_with_highest_overlap(ori_masks.to(device), ori_label_j) # 1, 1, h, w
 
-                class_mask.append(masks)
+                if j not in volume_dict:
+                    volume_dict[j] = []
+                volume_dict[j].append(best_mask) # key: n_class, val: 1, 1, h, w
 
-            class_out_mask = torch.stack(class_mask, dim=0).to(device)  #class, 1, h, w
+        for j in range(ori_label.shape[1]):
+            label_j = ori_label[:, j:j+1, ...] # n_slice, 1, h, w
+            if label_j.sum() > 0:
+                slice_ids = torch.where(label_j)[0].unique()
+                class_metric_j = SegMetrics(torch.stack(volume_dict[j], dim=0).cpu()[slice_ids], label_j.cpu()[slice_ids], args.metrics)
+                if j not in metric_dict:
+                    metric_dict[j] = {'iou': [], 'dice': []}
+                metric_dict[j]['iou'].append(class_metric_j[0])
+                metric_dict[j]['dice'].append(class_metric_j[1])
+                volume_mask.append(torch.stack(volume_dict[j], dim=1)) # 1, n_slice, h, w
+        
+        iou_list = []
+        dice_list = []
+        for j in range(ori_label.shape[1]):
+            if j not in metric_dict:
+                iou_list.append(-1)
+                dice_list.append(-1)
+                slice_iou[j]
+            else:
+                iou_list.append(np.mean(metric_dict[j]['iou']))
+                dice_list.append(np.mean(metric_dict[j]['dice']))
 
-            label_ = label[i].unsqueeze(1).to(device)      #class, 1, h, w
+        slice_iou = np.mean(iou_list)
+        slice_dice = np.mean(dice_list)
+        
+        loggers.info(f"{batch_input['name'][0]} volume {len(iou_list)} category IoU: {iou_list}")
+        loggers.info(f"{batch_input['name'][0]} volume {len(dice_list)} category Dice: {dice_list}")
+        
+        save_img3d(torch.cat(volume_mask, dim=0), save_path, batch_input['name'][0], zero_mask, index, ori_label)
 
-            best_masks, overlap_score = select_mask_with_highest_overlap(class_out_mask, label_)
-            volume_mask.append(best_masks)
+        mean_iou.append(iou_list)
+        mean_dice.append(dice_list)
 
-            for x in range(best_masks.shape[0]):
-                class_metrics_ = SegMetrics(best_masks[x : x+1], label_[x : x+1], args.metrics)  #1 slice产生class个特征图
-                slice_iou[x] += class_metrics_[0]
-                slice_dice[x] += class_metrics_[1]
-
-        save_img3d(torch.cat(volume_mask, dim=1), save_path, batch_input['name'][0], zero_mask, index)
-
-        for y in range(len(slice_iou)):
-            slice_iou[y] /= image.shape[0]
-            slice_dice[y] /= image.shape[0]
-
-        loggers.info(f"{batch_input['name'][0]} volume {len(slice_iou)} category IoU: {slice_iou}")
-        loggers.info(f"{batch_input['name'][0]} volume {len(slice_dice)} category Dice: {slice_dice}")
-
-        mean_iou.append(slice_iou)
-        mean_dice.append(slice_dice)
-
-
-    iou = np.array(mean_iou).mean(axis=0)
-    dice = np.array(mean_dice).mean(axis=0)
+    mean_iou = np.array(mean_iou) # n_case, n_class
+    mean_dice = np.array(mean_dice) # n_case, n_class
+    mean_iou[np.where(mean_iou == -1)] = np.nan
+    mean_dice[np.where(mean_dice == -1)] = np.nan
+    iou = np.nanmean(mean_iou, axis=0)
+    dice = np.nanmean(mean_dice, axis=0)
     for i in range(len(iou)):
         iou[i] = '{:.4f}'.format(iou[i])
         dice[i] = '{:.4f}'.format(dice[i])

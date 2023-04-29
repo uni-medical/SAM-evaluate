@@ -55,6 +55,7 @@ class Data_Loader(Dataset):
         # 根据index读取图片
         image = nib.load(self.imgs_path[index]).get_fdata()
         mask = nib.load(self.label_path[index]).get_fdata()
+        # zero_mask = np.zeros_like(mask)
 
         if image.shape[-1] < (self.image_size * 0.5) and self.dim != 'z':
             self.dim = 'z'
@@ -66,20 +67,20 @@ class Data_Loader(Dataset):
             origin_slice = mask.shape[2]
             nonzero_slices = np.where(np.any(mask, axis=(0, 1)))[0]
             select_image = image[:, :, nonzero_slices]
-            selcet_mask = mask[:, :, nonzero_slices]
+            select_mask = mask[:, :, nonzero_slices]
 
         else:
             if self.dim == 'x':
                 origin_slice = mask.shape[0]
                 nonzero_slices = np.where(np.any(mask, axis=(1, 2)))[0]
                 select_image = image[nonzero_slices, :, :].transpose(1,2,0)
-                selcet_mask = mask[nonzero_slices, :, :].transpose(1,2,0)
+                select_mask = mask[nonzero_slices, :, :].transpose(1,2,0)
 
             else:
                 origin_slice = mask.shape[1]
                 nonzero_slices = np.where(np.any(mask, axis=(0, 2)))[0]
                 select_image = image[:, nonzero_slices, :].transpose(0,2,1)
-                selcet_mask = mask[:,nonzero_slices, :].transpose(0,2,1)
+                select_mask = mask[:,nonzero_slices, :].transpose(0,2,1)
 
 
         class_num = self.num_class
@@ -87,34 +88,43 @@ class Data_Loader(Dataset):
         min_pixel = select_image.min()
         select_image = (255 * (select_image - min_pixel) / (max_pixel - min_pixel)).astype(np.uint8)
         resized_image = cv2.resize(select_image, target_size, cv2.INTER_NEAREST)
-        resized_mask = cv2.resize(selcet_mask, target_size, cv2.INTER_NEAREST).astype(np.int)
+        resized_mask = cv2.resize(select_mask, target_size, cv2.INTER_NEAREST).astype(np.int16)
+        ori_mask = select_mask.astype(np.int16)
 
         volume_image = []
         volume_mask = []
+        volume_ori_mask = []
         for i in range(resized_image.shape[-1]):
             volume_image.append(np.repeat(resized_image[...,i:i+1], repeats=3, axis=-1))
             volume_mask.append(resized_mask[...,i])
+            volume_ori_mask.append(ori_mask[...,i])
 
         volume_images = np.stack(volume_image, axis=0)
         volume_masks = np.stack(volume_mask, axis=0)
+        volume_ori_masks = np.stack(volume_ori_mask, axis=0)
 
         if len(volume_images.shape)<4:
             volume_images = np.expand_dims(volume_images, axis=0)
 
         if len(volume_masks.shape)<3:
             volume_masks = np.expand_dims(volume_masks, axis=0)
+        
+        if len(volume_ori_masks.shape)<3:
+            volume_ori_masks = np.expand_dims(volume_ori_masks, axis=0)
 
         copy_img = copy_image(volume_images, class_num - 1)
         image_input["image"] = copy_img
 
         if class_num == 2:
             label = np.expand_dims(volume_masks, axis=1)
+            ori_label = np.expand_dims(volume_ori_masks, axis=1)
         else:
             eye = np.eye(class_num, dtype=volume_masks.dtype)
             label = eye[volume_masks].transpose(0, 3, 1, 2)[:,1:,...]
-
+            ori_label = eye[volume_ori_masks].transpose(0, 3, 1, 2)[:,1:,...]
         image_input["label"] = label
-        S, C, H, W = image_input["label"].shape
+        image_input['ori_label'] = ori_label
+        S, C, H, W = image_input["ori_label"].shape
         zero_mask = torch.zeros((origin_slice, C, H, W), dtype=torch.int)
 
         if self.prompt_point and class_num == 2:

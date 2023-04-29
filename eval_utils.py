@@ -5,6 +5,8 @@ import os
 import skimage.io as io
 from PIL import Image
 import nibabel as nib
+from skimage.transform import resize
+
 
 def move_batch_to_device(batch_input, device):
     """将批量输入数据移动到指定设备上（如GPU）"""
@@ -82,23 +84,74 @@ def select_mask_with_highest_overlap(mask: torch.Tensor, label: torch.Tensor) ->
     return out_mask, out_overlap_score
 
 
-def save_img3d(predict_overlap, save_path, mask_name, zero_mask, index):   #zero_mask [168, 4, 256, 256]   index [67]
+# def resize_segmentation(segmentation, new_shape, order=1):
+#     '''
+#     Resizes a segmentation map. Supports all orders (see skimage documentation). Will transform segmentation map to one
+#     hot encoding which is resized and transformed back to a segmentation map.
+#     This prevents interpolation artifacts ([0, 0, 2] -> [0, 1, 2])
+#     :param segmentation:
+#     :param new_shape:
+#     :param order: We deault use oder 1, same as nnUNet
+#     :return:
+#     '''
+#     tpe = segmentation.dtype
+#     unique_labels = np.unique(segmentation)
+#     assert len(segmentation.shape) == len(new_shape), "new shape must have same dimensionality as segmentation"
+#     if order == 0:
+#         return resize(segmentation.astype(float), new_shape, order, mode="edge", clip=True, anti_aliasing=False).astype(tpe)
+#     else:
+#         reshaped = np.zeros(new_shape, dtype=segmentation.dtype)
+
+#         for i, c in enumerate(unique_labels):
+#             mask = segmentation == c
+#             reshaped_multihot = resize(mask.astype(float), new_shape, order, mode="edge", clip=True, anti_aliasing=False)
+#             reshaped[reshaped_multihot >= 0.5] = c
+#         return reshaped
+
+
+def is_saved(save_path, mask_name, num_class):
+    save_overlap_path = os.path.join(save_path, 'predict_masks')
+    for i in range(num_class):
+        if num_class == 1:
+            save_name = mask_name
+        else:
+            save_name = mask_name.split('.nii.gz')[0] + '_' + str(i+1).zfill(3) + '.nii.gz'
+        if not os.path.exists(os.path.join(save_overlap_path, save_name)):
+            return False
+    return True
+
+
+def save_img3d(predict_overlap, save_path, mask_name, zero_mask, index, label):   #zero_mask [168, 4, 256, 256]   index [67]
 
     if predict_overlap.dtype == torch.bool:
         predict_overlap = predict_overlap.type(torch.int) #class, slice, 256, 256
+    
+    label = label.transpose(1, 0) #class, slice, 256, 256
 
     predict_overlap = predict_overlap.cpu().numpy()
     zero_mask = zero_mask.cpu().numpy()
 
+    label = label.cpu().numpy()
+    zero_gt = np.zeros_like(zero_mask)
+
     save_overlap_path = os.path.join(save_path, 'predict_masks')
     os.makedirs(save_overlap_path, exist_ok=True)
+
+    gt_path = os.path.join(save_path, 'gt_segmentations')
+    os.makedirs(gt_path, exist_ok=True)
 
     for i in range(predict_overlap.shape[0]): #class
         pred = predict_overlap[i]
         pred_ = np.moveaxis(pred, [0, 1, 2], [2, 0, 1])  #256, 256, 67
         class_zero_mask = np.moveaxis(zero_mask[:,i,...], [0, 1, 2], [2, 0, 1])  #256, 256, 168
+
+        gt = label[i]
+        gt_ = np.moveaxis(gt, [0, 1, 2], [2, 0, 1])
+        class_zero_gt = np.moveaxis(zero_gt[:,i,...], [0, 1, 2], [2, 0, 1])  #256, 256, 168
+
         for item, value in enumerate(index):
             class_zero_mask[:, :, value] = pred_[:, :, item]
+            class_zero_gt[:, :, value] = gt_[:, :, item]
 
         if predict_overlap.shape[0] == 1:
             save_name = mask_name
@@ -108,6 +161,8 @@ def save_img3d(predict_overlap, save_path, mask_name, zero_mask, index):   #zero
         predict = nib.Nifti1Image(class_zero_mask, affine=np.eye(4))
         nib.save(predict, os.path.join(save_overlap_path, save_name))
 
+        gt = nib.Nifti1Image(class_zero_gt, affine=np.eye(4))
+        nib.save(gt, os.path.join(gt_path, save_name))
 
 
 def save_img(predict_score, predict_overlap, label, save_path, mask_name):
