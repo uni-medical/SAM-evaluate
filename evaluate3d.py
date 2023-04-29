@@ -214,21 +214,17 @@ def evaluate_batch_images(args, model):
             if j not in metric_dict:
                 iou_list.append(-1)
                 dice_list.append(-1)
-                slice_iou[j]
             else:
                 iou_list.append(np.mean(metric_dict[j]['iou']))
                 dice_list.append(np.mean(metric_dict[j]['dice']))
 
-        slice_iou = np.mean(iou_list)
-        slice_dice = np.mean(dice_list)
+        mean_iou.append(iou_list)
+        mean_dice.append(dice_list)
         
         loggers.info(f"{batch_input['name'][0]} volume {len(iou_list)} category IoU: {iou_list}")
         loggers.info(f"{batch_input['name'][0]} volume {len(dice_list)} category Dice: {dice_list}")
         
         save_img3d(torch.cat(volume_mask, dim=0), save_path, batch_input['name'][0], zero_mask, index, ori_label)
-
-        mean_iou.append(iou_list)
-        mean_dice.append(dice_list)
 
     mean_iou = np.array(mean_iou) # n_case, n_class
     mean_dice = np.array(mean_dice) # n_case, n_class
