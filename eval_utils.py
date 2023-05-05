@@ -13,10 +13,14 @@ def select_label(labels):
     if len(labels.shape) == 4:
         labels = labels.squeeze(1)
 
-    channel_sums = labels.sum(dim=(1, 2))
-    all_zeros = (channel_sums == 0.0)
-    keep_indices = torch.arange(labels.shape[0])[~all_zeros]
-    output_tensor = labels[keep_indices, ...]
+    if labels.shape[0] == 1:
+        output_tensor = torch.as_tensor(labels[0:1], dtype=torch.int)
+        keep_indices = torch.tensor([0], dtype=torch.long)
+    else:
+        channel_sums = labels.sum(dim=(1, 2))
+        all_zeros = (channel_sums == 0.0)
+        keep_indices = torch.arange(labels.shape[0])[~all_zeros]
+        output_tensor = labels[keep_indices, ...]
     return output_tensor, keep_indices
 
 
