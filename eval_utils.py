@@ -161,7 +161,7 @@ def save_img(predict_score, predict_overlap, label, save_path, mask_name, class_
     os.makedirs(save_overlap_path, exist_ok=True)
     os.makedirs(save_label_path, exist_ok=True)
 
-    trans_totensor = torchvision.transforms.ToTensor()
+    # trans_totensor = torchvision.transforms.ToTensor()
     resize_score, resize_overlap, resize_label = [], [], []
     for i in range(N):
         score_img = Image.fromarray(np.uint8(predict_score[i] * 255))
@@ -173,14 +173,15 @@ def save_img(predict_score, predict_overlap, label, save_path, mask_name, class_
         resized_label_img = label_img.resize(origin_size, resample=Image.NEAREST)
 
         save_name = mask_name.split('.')[0] + '_' + str(class_idex[i]+1).zfill(3) + '.png'
+        
         resized_score_img.save(os.path.join(save_score_path, save_name))
         resized_overlap_img.save(os.path.join(save_overlap_path, save_name))
         resized_label_img.save(os.path.join(save_label_path, save_name))
 
-        resize_score.append(trans_totensor(resized_score_img))
-        resize_overlap.append(trans_totensor(resized_overlap_img))
-        resize_label.append(trans_totensor(resized_label_img))
-
+        resize_score.append(torch.as_tensor(np.array(resized_score_img), dtype=torch.int))
+        resize_overlap.append(torch.as_tensor(np.array(resized_overlap_img), dtype=torch.int))
+        resize_label.append(torch.as_tensor(np.array(resized_label_img), dtype=torch.int))
+    
     resize_scores = torch.stack(resize_score, dim=0).unsqueeze(1) / 255.
     resize_overlaps = torch.stack(resize_overlap, dim=0).unsqueeze(1) / 255.
     resize_labels = torch.stack(resize_label, dim=0).unsqueeze(1) / 255.
