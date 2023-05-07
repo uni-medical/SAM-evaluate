@@ -142,8 +142,8 @@ def update_result_dict(save_path, mask_name, num_class, res_dict, metrics):
         if label_j.sum() > 0:
             slice_ids = torch.where(label_j)[0].unique()
             class_metric_j = SegMetrics(pred_j[slice_ids], label_j[slice_ids], metrics)
-            res_dict[mask_name]['iou'].append(class_metric_j[0])
-            res_dict[mask_name]['dice'].append(class_metric_j[1])
+            res_dict[mask_name]['iou'].append(class_metric_j[0].item())
+            res_dict[mask_name]['dice'].append(class_metric_j[1].item())
         else:
             res_dict[mask_name]['iou'].append(-1)
             res_dict[mask_name]['dice'].append(-1)

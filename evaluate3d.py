@@ -146,6 +146,8 @@ def evaluate_batch_images(args, model):
             mean_dice.append(res_dict[mask_name]['dice'])
             loggers.info(f"{batch_input['name'][0]} volume {len(res_dict[mask_name]['iou'])} category IoU: {res_dict[mask_name]['iou']}")
             loggers.info(f"{batch_input['name'][0]} volume {len(res_dict[mask_name]['dice'])} category Dice: {res_dict[mask_name]['dice']}")
+            with open(json_path, 'w') as fid:
+                json.dump(res_dict, fid, indent=4, sort_keys=True)
             continue
 
         if args.include_prompt_point:
@@ -226,8 +228,8 @@ def evaluate_batch_images(args, model):
             if label_j.sum() > 0:
                 slice_ids = torch.where(label_j)[0].unique()
                 class_metric_j = SegMetrics(torch.stack(volume_dict[j], dim=0).cpu()[slice_ids], label_j.cpu()[slice_ids], args.metrics)
-                res_dict[mask_name]['iou'].append(class_metric_j[0])
-                res_dict[mask_name]['dice'].append(class_metric_j[1])
+                res_dict[mask_name]['iou'].append(class_metric_j[0].item())
+                res_dict[mask_name]['dice'].append(class_metric_j[1].item())
             else:
                 res_dict[mask_name]['iou'].append(-1)
                 res_dict[mask_name]['dice'].append(-1)
