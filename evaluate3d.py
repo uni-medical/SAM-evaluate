@@ -3,7 +3,7 @@ from data_load3d import Data_Loader
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from typing import Tuple
-from eval_utils import save_img3d, select_mask_with_highest_iouscore, select_mask_with_highest_overlap, SegMetrics, is_saved
+from eval_utils import save_img3d, select_mask_with_highest_iouscore, select_mask_with_highest_overlap, SegMetrics, is_saved, update_result_dict
 import argparse
 import torch.nn as nn
 import logging
@@ -12,8 +12,18 @@ import numpy as np
 from matplotlib import pyplot as plt
 import torch
 from skimage.transform import resize
+import json
 
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
+
+
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Unsupported value encountered.')
 
 
 def parse_args():
@@ -26,11 +36,11 @@ def parse_args():
     parser.add_argument("--device_ids", nargs='+', type=int, default=[0,1], help="device_ids")
     parser.add_argument("--model_type", type=str, default="vit_h", help="sam model_type")
     parser.add_argument("--sam_checkpoint", type=str, default="pretrain_model/sam_vit_h_4b8939.pth",help="sam checkpoint")
-    parser.add_argument("--include_prompt_point", type=bool, default=True, help="need point prompt")
+    parser.add_argument("--include_prompt_point", type=str2bool, default=True, help="need point prompt")
     parser.add_argument("--num_point", type=int, default=1, help="point or point number")
-    parser.add_argument("--include_prompt_box", type=bool, default=True, help="need boxes prompt")
+    parser.add_argument("--include_prompt_box", type=str2bool, default=True, help="need boxes prompt")
     parser.add_argument("--num_boxes", type=int, default=1, help="boxes or boxes number")
-    parser.add_argument("--multimask_output", type=bool, default=True, help="multimask output")
+    parser.add_argument("--multimask_output", type=str2bool, default=True, help="multimask output")
     parser.add_argument("--save_path", type=str, default='save_datasets/3d/autoPET/',
                         help="save data path")
     args = parser.parse_args()
@@ -93,7 +103,7 @@ def evaluate_batch_images(args, model):
                           dim = args.dim,
                           )
 
-    train_loader = DataLoader(dataset=dataset, batch_size=1, shuffle=False, num_workers=32)
+    train_loader = DataLoader(dataset=dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True)
     progress_bar = tqdm(train_loader)
     dim = next(iter(progress_bar))['dim'][0]
 
@@ -101,13 +111,18 @@ def evaluate_batch_images(args, model):
                              f"{dim}_{args.image_size}"
                              f"_{'boxes' if args.include_prompt_box else 'points'}"
                              f"_{args.num_boxes if args.include_prompt_box else args.num_point}")
-
+    print ('***** The save root is: {}'.format(save_path))
     os.makedirs(save_path, exist_ok=True)
 
     txt_path = os.path.join(save_path,
                             f"{dim}_{args.image_size}"
                             f"_{'boxes' if args.include_prompt_box else 'points'}"
                             f"_{args.num_boxes if args.include_prompt_box else args.num_point}.txt")
+    json_path = os.path.join(save_path, 'result.json')
+    if os.path.exists(json_path):
+        res_dict = json.load(open(json_path, 'r'))
+    else:
+        res_dict = {}
 
     loggers = get_logger(txt_path)
 
@@ -120,8 +135,17 @@ def evaluate_batch_images(args, model):
         ori_label = batch_input['ori_label'][0]
         zero_mask = batch_input['zero_mask'][0]
         index =  batch_input['index'][0]
+        mask_name = batch_input['name'][0]
 
-        if is_saved(save_path, batch_input['name'][0], ori_label.shape[1]):
+        if len(image.shape) == 1 and image.shape[0] == 1: # Filter cases with no foreground
+            continue
+
+        if is_saved(save_path, mask_name, ori_label.shape[1]):
+            res_dict = update_result_dict(save_path, mask_name, ori_label.shape[1], res_dict, args.metrics)
+            mean_iou.append(res_dict[mask_name]['iou'])
+            mean_dice.append(res_dict[mask_name]['dice'])
+            loggers.info(f"{batch_input['name'][0]} volume {len(res_dict[mask_name]['iou'])} category IoU: {res_dict[mask_name]['iou']}")
+            loggers.info(f"{batch_input['name'][0]} volume {len(res_dict[mask_name]['dice'])} category Dice: {res_dict[mask_name]['dice']}")
             continue
 
         if args.include_prompt_point:
@@ -138,9 +162,7 @@ def evaluate_batch_images(args, model):
 
         volume_mask = []
         volume_dict = {}
-        metric_dict = {}
         for i in range(image.shape[0]):  #slice
-            class_mask= []
             for j in range(image.shape[1]): #class
                 image_ = image[i][j].cpu().numpy().astype(np.uint8)
                 model.set_image(image_)
@@ -197,34 +219,28 @@ def evaluate_batch_images(args, model):
                     volume_dict[j] = []
                 volume_dict[j].append(best_mask) # key: n_class, val: 1, 1, h, w
 
+        res_dict[mask_name] = {'iou': [], 'dice': []}
         for j in range(ori_label.shape[1]):
+            volume_mask.append(torch.stack(volume_dict[j], dim=1)) # 1, n_slice, h, w
             label_j = ori_label[:, j:j+1, ...] # n_slice, 1, h, w
             if label_j.sum() > 0:
                 slice_ids = torch.where(label_j)[0].unique()
                 class_metric_j = SegMetrics(torch.stack(volume_dict[j], dim=0).cpu()[slice_ids], label_j.cpu()[slice_ids], args.metrics)
-                if j not in metric_dict:
-                    metric_dict[j] = {'iou': [], 'dice': []}
-                metric_dict[j]['iou'].append(class_metric_j[0])
-                metric_dict[j]['dice'].append(class_metric_j[1])
-                volume_mask.append(torch.stack(volume_dict[j], dim=1)) # 1, n_slice, h, w
-        
-        iou_list = []
-        dice_list = []
-        for j in range(ori_label.shape[1]):
-            if j not in metric_dict:
-                iou_list.append(-1)
-                dice_list.append(-1)
+                res_dict[mask_name]['iou'].append(class_metric_j[0])
+                res_dict[mask_name]['dice'].append(class_metric_j[1])
             else:
-                iou_list.append(np.mean(metric_dict[j]['iou']))
-                dice_list.append(np.mean(metric_dict[j]['dice']))
-
-        mean_iou.append(iou_list)
-        mean_dice.append(dice_list)
+                res_dict[mask_name]['iou'].append(-1)
+                res_dict[mask_name]['dice'].append(-1)
         
-        loggers.info(f"{batch_input['name'][0]} volume {len(iou_list)} category IoU: {iou_list}")
-        loggers.info(f"{batch_input['name'][0]} volume {len(dice_list)} category Dice: {dice_list}")
+        mean_iou.append(res_dict[mask_name]['iou'])
+        mean_dice.append(res_dict[mask_name]['dice'])
+        
+        loggers.info(f"{batch_input['name'][0]} volume {len(res_dict[mask_name]['iou'])} category IoU: {res_dict[mask_name]['iou']}")
+        loggers.info(f"{batch_input['name'][0]} volume {len(res_dict[mask_name]['dice'])} category Dice: {res_dict[mask_name]['dice']}")
         
         save_img3d(torch.cat(volume_mask, dim=0), save_path, batch_input['name'][0], zero_mask, index, ori_label)
+        with open(json_path, 'w') as fid:
+            json.dump(res_dict, fid, indent=4, sort_keys=True)
 
     mean_iou = np.array(mean_iou) # n_case, n_class
     mean_dice = np.array(mean_dice) # n_case, n_class
@@ -237,8 +253,6 @@ def evaluate_batch_images(args, model):
         dice[i] = '{:.4f}'.format(dice[i])
     loggers.info(f"{len(mean_iou)} volume mIoU: {iou}")
     loggers.info(f"{len(mean_dice)} volume mDice: {dice}")
-
-
 
 
 if __name__ == "__main__":

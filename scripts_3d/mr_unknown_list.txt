@@ -1,0 +1,16 @@
+abdomen_tissue_fromSJTU
+ACDC
+AMOS2022
+CAUSE07
+COSMOS2022
+cSeg-2022
+EMIDEC
+Heart_Seg_MRI
+hvsmr_2016
+MMWHS
+mnms
+mnms2
+MSD_Heart
+MSD_Hippocampus
+PROMISE12
+STACOM_SLAWT
