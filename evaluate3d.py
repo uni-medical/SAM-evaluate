@@ -18,7 +18,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=1, help="train batch size")
     parser.add_argument("--image_size", type=int, default=256, help="image_size")
-    parser.add_argument("--data_path", type=str, default='mount_preprocessed_sam/3d/semantic_seg/mr_cbf/ISLES_SPES/',help="eval data path")
+    parser.add_argument("--data_path", type=str, default='mount_preprocessed_sam/3d/semantic_seg/ct/AMOS2022',help="eval data path")
     parser.add_argument("--dim", type=str, default='z', help="testing dim, default 'z' ")
     parser.add_argument("--metrics", nargs='+', default=['iou', 'dice'], help="metrics")
     parser.add_argument("--device_ids", nargs='+', type=int, default=[0,1,2,3], help="device_ids")
@@ -29,7 +29,7 @@ def parse_args():
     parser.add_argument("--include_prompt_box", type=bool, default=True, help="need boxes prompt")
     parser.add_argument("--num_boxes", type=int, default=1, help="boxes or boxes number")
     parser.add_argument("--multimask_output", type=bool, default=True, help="multimask output")
-    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/3d/ISLES_SPES/',
+    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/3d/AMOS2022/',
                         help="save data path")
     args = parser.parse_args()
 
@@ -119,6 +119,7 @@ def evaluate_batch_images(args, model):
         zero_mask = batch_input['zero_mask'][0]
         index =  batch_input['index'][0]
 
+
         if args.include_prompt_point:
             point_coord = batch_input['point_coords'][0]  #[1,slice, class, N, 2])
             point_label = batch_input['point_labels'][0]
@@ -184,13 +185,12 @@ def evaluate_batch_images(args, model):
 
             class_out_mask = torch.stack(class_mask, dim=0).to(device)  #class, 3, h, w
             
-      
             label_ = label[i].unsqueeze(1).to(device)      #class, 1, h, w
 
             best_masks, overlap_score = select_mask_with_highest_overlap(class_out_mask, label_)
             volume_mask.append(best_masks)
 
-            for x in range(best_masks.shape[0]):
+            for x in range(best_masks.shape[0]): #best_masks[15, 1, 256, 256] label_[15, 1, 256, 256]
                 class_metrics_ = SegMetrics(best_masks[x : x+1], label_[x : x+1], args.metrics)  #1 slice产生class个特征图
                 slice_iou[x] += class_metrics_[0]
                 slice_dice[x] += class_metrics_[1]

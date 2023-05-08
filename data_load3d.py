@@ -11,6 +11,20 @@ import nibabel as nib
 from data_load import random_point_sampling, get_box
 import json
 
+def is_saved(save_path, mask_name, num_class):
+    save_overlap_path = os.path.join(save_path,'predict_masks')
+    for i in range(num_class):
+        if num_class == 1:
+            save_name = mask_name
+        else:
+            save_name = mask_name.split(".nii.gz")[0] + '_' + str(i + 1).zfill(3) + '.nii.gz'
+        
+        if not os.path.exists(os.path.join(save_overlap_path, save_name)):
+            return False
+            
+    return True
+
+
 def copy_image(image_matrix, num_class):
     out_matrix = np.tile(image_matrix[:,np.newaxis,:,:,:], (1, num_class, 1, 1, 1))
     return out_matrix
@@ -83,6 +97,7 @@ class Data_Loader(Dataset):
 
 
         class_num = self.num_class
+  
         max_pixel = select_image.max()
         min_pixel = select_image.min()
         select_image = (255 * (select_image - min_pixel) / (max_pixel - min_pixel)).astype(np.uint8)
@@ -158,7 +173,7 @@ class Data_Loader(Dataset):
 
 
 if __name__ == "__main__":
-    train_dataset = Data_Loader("mount_preprocessed_sam/3d/semantic_seg/mr_adc/ISLES2016/", image_size=256, prompt_point=True, prompt_box=True, dim='x',)
+    train_dataset = Data_Loader("mount_preprocessed_sam/3d/semantic_seg/ct/CHAOS_Task_4/", image_size=256, prompt_point=True, prompt_box=True, dim='z',)
     print("数据个数：", len(train_dataset))
     train_batch_sampler = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=1, shuffle=False)
     for batched_image in (train_batch_sampler):

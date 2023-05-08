@@ -17,13 +17,13 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=10, help="train batch size")
     parser.add_argument("--image_size", type=int, default=1024, help="image_size")
-    parser.add_argument("--data_path", type=str, default='mount_preprocessed_sam/2d/semantic_seg/mr/UW-Madison/', help="eval data path")
-    parser.add_argument("--data_mode", type=str, default='val', help="eval train or test data")
+    parser.add_argument("--data_path", type=str, default='mount_preprocessed_sam/2d/semantic_seg/fundus_photography/drive/', help="eval data path")
+    parser.add_argument("--data_mode", type=str, default='test', help="eval train or test data")
     parser.add_argument("--metrics", nargs='+', default=['acc', 'iou', 'dice', 'sens', 'spec'], help="metrics")
     parser.add_argument("--device_ids", nargs='+', type=int, default=[0, 1, 2, 3, 4, 5, 6, 7], help="device_ids")
     parser.add_argument("--model_type", type=str, default="vit_h", help="sam model_type")
     parser.add_argument("--sam_checkpoint", type=str, default="Evaluate-SAM/pretrain_model/sam_vit_h_4b8939.pth", help="sam checkpoint")
-    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/2d/UW-Madison/', help="save data path")
+    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/2d/drive/', help="save data path")
     args = parser.parse_args()
 
     return args

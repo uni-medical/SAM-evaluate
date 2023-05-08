@@ -267,11 +267,11 @@ class Data_Loader(Dataset):
         self.imgs_path = [os.path.join(data_path, "images", img) for img in self.img_list]
         self.label_path = [os.path.join(data_path, "masks", img) for img in self.img_list]
 
-        with open(os.path.join(data_path, 'dataset.json'), 'r') as f:
-            data = json.load(f)
-        key = data_path.split('/')[-1]
-        self.num_class = data[key]
-#         self.num_class = 4
+        # with open(os.path.join(data_path, 'dataset.json'), 'r') as f:
+        #     data = json.load(f)
+        # key = data_path.split('/')[-1]
+        # self.num_class = data[key]
+        self.num_class = 2
         self.imgs_path.sort()
         self.label_path.sort()
         self.transforms = transforms(image_size)
@@ -296,7 +296,7 @@ class Data_Loader(Dataset):
 
         image = np.repeat(np.expand_dims(image, axis=0), repeats=self.num_class-1, axis=0)
         mask = mask_to_one_hot(mask, self.num_class)[1:]
-     
+
         image_input["image"] = image
         image_input["label"] = mask
  
@@ -329,16 +329,15 @@ def get_origin_size(torch_original_size):
 
 
 if __name__ == "__main__":
-    train_dataset = Data_Loader('mount_preprocessed_sam/2d/semantic_seg/mr/UW-Madison/', image_size=1024, mode='val', prompt_point=True, prompt_box=True)
+    train_dataset = Data_Loader('mount_preprocessed_sam/2d/semantic_seg/endoscopy/EAD19/', image_size=1024, mode='val', prompt_point=True, prompt_box=True)
     print("数据个数：", len(train_dataset))
-    train_batch_sampler = DataLoader(dataset=train_dataset, batch_size=8, shuffle=False)
+    train_batch_sampler = DataLoader(dataset=train_dataset, batch_size=4, shuffle=False)
     for batched_image in (train_batch_sampler):
         print('*'*10)
-        print(batched_image['image'].shape)
-        print(batched_image['label'].shape)
-        print(batched_image['point_coords'].shape)
-        print(batched_image['point_labels'].shape)
-        get_origin_size(batched_image['original_size'])
+        # print(batched_image['image'].shape)
+        # print(batched_image['label'].shape)
+        # print(np.unique(batched_image['label']))
 
+        # get_origin_size(batched_image['original_size'])
         # print(torch.unique(batched_image['label']))
         # print(batched_image.get('boxes', None))

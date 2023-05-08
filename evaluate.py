@@ -15,10 +15,10 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=8, help="train batch size")
     parser.add_argument("--image_size", type=int, default=1024, help="image_size")
-    parser.add_argument("--data_path", type=str, default='mount_preprocessed_sam/2d/semantic_seg/mr/UW-Madison/', help="eval data path")
+    parser.add_argument("--data_path", type=str, default= 'mount_preprocessed_sam/2d/semantic_seg/endoscopy/EndoCV2020_EAD/', help="eval data path")  #'mount_preprocessed_sam/2d/semantic_seg/endoscopy/EAD19/'
     parser.add_argument("--data_mode", type=str, default='val', help="eval train or test data")
     parser.add_argument("--metrics", nargs='+', default=['acc', 'iou', 'dice', 'sens', 'spec'], help="metrics")
-    parser.add_argument("--device_ids", nargs='+', type=int, default=[0, 1, 2, 3], help="device_ids")
+    parser.add_argument("--device_ids", nargs='+', type=int, default=[0,4], help="device_ids")
     parser.add_argument("--model_type", type=str, default="vit_h", help="sam model_type")
     parser.add_argument("--sam_checkpoint", type=str, default="Evaluate-SAM/pretrain_model/sam_vit_h_4b8939.pth", help="sam checkpoint")
     parser.add_argument("--include_prompt_point", type=bool, default=False, help="need point prompt")
@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument("--include_prompt_box", type=bool, default=True, help="need boxes prompt")
     parser.add_argument("--num_boxes", type=int, default=1, help="boxes or boxes number")
     parser.add_argument("--multimask_output", type=bool, default=True, help="multimask output")
-    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/2d/UW-Madison/', help="save data path")
+    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/2d/endoscopy/EndoCV2020_EAD/', help="save data path")
     args = parser.parse_args()
 
     return args
@@ -163,10 +163,10 @@ def evaluate_batch_images(args, model):
 
             class_out_mask = torch.stack(class_mask, dim=0)  #class, 3, 1, H, W
             class_out_iou = torch.stack(class_score, dim=0)  #class, 3, 1
-     
+
             label = batch_input["label"][i]     #3, H, W
             select_labels, class_idex = select_label(label)  #实际class, H, W  ——> 2, H, W
-            
+   
             select_class_outmask = class_out_mask[class_idex, ...]
             select_class_outiou = class_out_iou[class_idex, ...]
 
