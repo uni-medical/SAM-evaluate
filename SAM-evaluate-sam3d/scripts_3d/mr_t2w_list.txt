@@ -1,0 +1,11 @@
+BrainTumour
+CHAOS_Task_4
+FeTA
+FeTA2022_all
+picai_baseline
+picai_semi
+Promise09
+Prostate_MRI_Segmentation_Dataset
+VALDO_Task1
+VALDO_Task2
+VALDO_Task3

@@ -1,0 +1,7 @@
+ATLAS_2
+BrainTumour
+CHAOS_Task_4
+HaN-Seg
+VALDO_Task1
+VALDO_Task2
+VALDO_Task3

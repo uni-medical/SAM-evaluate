@@ -1,0 +1,15 @@
+BrainTumour
+BraTS2013
+BraTS2015
+BraTS2018
+BraTS2019
+BraTS2020
+BraTS2021
+ISLES_SISS
+LongitudinalMultipleSclerosisLesionSegmentation
+MESSEG
+MSseg08
+MSSEG2016
+VALDO_Task1
+VALDO_Task3
+WMH
