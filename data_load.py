@@ -248,6 +248,32 @@ def mask_to_one_hot(mask, num_classes):
     return one_hot
 
 
+def collate_wrapper(batch_data):
+    ori_mask = []
+    for i in range(len(batch_data)):
+        ori_mask.append(batch_data[i].pop('label'))
+    total_dict = stack_dicts(batch_data)
+    return total_dict, ori_mask
+
+def stack_dicts(dicts):
+    """
+    将一个由多个字典组成的列表进行stack操作, 并返回堆叠后的大字典
+    :param dicts: 由多个字典组成的列表
+    :return: 堆叠后的大字典
+    """
+    # 获取每个字典的键
+    keys = dicts[0].keys()
+
+    # 循环遍历每个键，将对应的值进行stack
+    stacked_values = {}
+    for key in keys:
+        values = [d[key] for d in dicts]
+        stacked_values[key] = np.stack(values)
+
+    return stacked_values
+
+
+
 class Data_Loader(Dataset):
     def __init__(self, 
                         data_path, 
@@ -291,8 +317,11 @@ class Data_Loader(Dataset):
 
         image_input['original_size'] = tuple(mask.shape)
         
-        augments = self.transforms(image=image, mask=mask)
-        image, mask = augments['image'], augments['mask'].astype(np.int64)
+        augments = self.transforms(image=image)
+        image = augments['image']
+        # augments = self.transforms(image=image, mask=mask)
+        # image, mask = augments['image'], augments['mask'].astype(np.int64)
+
 
         image = np.repeat(np.expand_dims(image, axis=0), repeats=self.num_class-1, axis=0)
         mask = mask_to_one_hot(mask, self.num_class)[1:]
@@ -323,19 +352,24 @@ class Data_Loader(Dataset):
 
 
 def get_origin_size(torch_original_size):
-    new_tuple = zip(torch_original_size[0].cpu().numpy(), torch_original_size[1].cpu().numpy())
+    new_tuple = zip(torch_original_size[0], torch_original_size[1])
     origin_size = [tuple(x) for x in new_tuple]
     return origin_size
 
 
 if __name__ == "__main__":
-    train_dataset = Data_Loader('mount_preprocessed_sam/2d/semantic_seg/endoscopy/EAD19/', image_size=1024, mode='val', prompt_point=True, prompt_box=True)
+    train_dataset = Data_Loader('/home/chengjunlong/mount_preprocessed_sam/2d/semantic_seg/fundus_photography/gamma3/', image_size=1024, mode='val', prompt_point=True, prompt_box=True)
     print("数据个数：", len(train_dataset))
-    train_batch_sampler = DataLoader(dataset=train_dataset, batch_size=4, shuffle=False)
-    for batched_image in (train_batch_sampler):
+    train_batch_sampler = DataLoader(dataset=train_dataset, batch_size=8, shuffle=False, collate_fn=collate_wrapper)
+    for batched_image, ori_mask in (train_batch_sampler):
         print('*'*10)
-        # print(batched_image['image'].shape)
-        # print(batched_image['label'].shape)
+        print(batched_image['image'].shape)
+        print(batched_image['point_coords'].shape)
+        print(batched_image['point_labels'].shape)
+        print(batched_image['boxes'].shape)
+        print(batched_image['name'])
+        print(ori_mask[0].shape)
+        print(batched_image['original_size'])
         # print(np.unique(batched_image['label']))
 
         # get_origin_size(batched_image['original_size'])
