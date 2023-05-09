@@ -15,10 +15,10 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=8, help="train batch size")
     parser.add_argument("--image_size", type=int, default=1024, help="image_size")
-    parser.add_argument("--data_path", type=str, default= 'mount_preprocessed_sam/2d/semantic_seg/endoscopy/EndoCV2020_EAD/', help="eval data path")  #'mount_preprocessed_sam/2d/semantic_seg/endoscopy/EAD19/'
+    parser.add_argument("--data_path", type=str, default= 'mount_preprocessed_sam/2d/semantic_seg/endoscopy/EAD19/', help="eval data path")  #'mount_preprocessed_sam/2d/semantic_seg/endoscopy/EAD19/'
     parser.add_argument("--data_mode", type=str, default='val', help="eval train or test data")
     parser.add_argument("--metrics", nargs='+', default=['acc', 'iou', 'dice', 'sens', 'spec'], help="metrics")
-    parser.add_argument("--device_ids", nargs='+', type=int, default=[0,4], help="device_ids")
+    parser.add_argument("--device_ids", nargs='+', type=int, default=[0,2,4,7], help="device_ids")
     parser.add_argument("--model_type", type=str, default="vit_h", help="sam model_type")
     parser.add_argument("--sam_checkpoint", type=str, default="Evaluate-SAM/pretrain_model/sam_vit_h_4b8939.pth", help="sam checkpoint")
     parser.add_argument("--include_prompt_point", type=bool, default=False, help="need point prompt")
@@ -88,7 +88,7 @@ def evaluate_batch_images(args, model):
                           num_point=args.num_point
                           )
 
-    train_loader = DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=False, num_workers=48)
+    train_loader = DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=False, num_workers=48, collate_fn=collate_wrapper)
     progress_bar = tqdm(train_loader)
 
 
@@ -115,13 +115,13 @@ def evaluate_batch_images(args, model):
     overlap_metric =[0] * len(args.metrics)
     score_metrics, overlap_metrics = {}, {}
 
-    for batch_input in progress_bar:
+    for batch_input, ori_mask in progress_bar:
         batch_image = batch_input['image']         #B, Class, H, W, 3
 
         for i in range(batch_image.shape[0]):     #1, class, H, W, 3
             class_mask, class_score = [], []
             for j in range(batch_image.shape[1]):
-                image = batch_image[i][j].cpu().numpy().astype(np.uint8)
+                image = batch_image[i][j].astype(np.uint8)
                 model.set_image(image)
 
                 if args.include_prompt_point:
@@ -135,7 +135,7 @@ def evaluate_batch_images(args, model):
                         box = torch.as_tensor(batch_input['boxes'][i][j]).to(args.device)
                         box = model.transform.apply_boxes_torch(box, image.shape[:2])
                     else:
-                        box = batch_input['boxes'][i][j].cpu().numpy()[0]
+                        box = batch_input['boxes'][i][j][0]
                 else:
                     box = None
 
@@ -164,16 +164,16 @@ def evaluate_batch_images(args, model):
             class_out_mask = torch.stack(class_mask, dim=0)  #class, 3, 1, H, W
             class_out_iou = torch.stack(class_score, dim=0)  #class, 3, 1
 
-            label = batch_input["label"][i]     #3, H, W
+            label = ori_mask[i]     #3, H, W
             select_labels, class_idex = select_label(label)  #实际class, H, W  ——> 2, H, W
    
             select_class_outmask = class_out_mask[class_idex, ...]
             select_class_outiou = class_out_iou[class_idex, ...]
 
             best_iouscore_masks = select_mask_with_highest_iouscore(select_class_outmask, select_class_outiou)
-            best_overlap_masks, overlap_score = select_mask_with_highest_overlap(select_class_outmask, select_labels)
+            best_overlap_masks, overlap_score = select_mask_with_highest_overlap(select_class_outmask, select_labels)  #[class, 1, 1024, 1024], [class, n, 1]
        
-            origin_size = get_origin_size(batch_input['original_size'])
+            origin_size = batch_input['original_size']
 
             resize_scores, resize_overlaps, resize_labels = save_img(best_iouscore_masks, 
                                                                     best_overlap_masks, 
@@ -181,8 +181,8 @@ def evaluate_batch_images(args, model):
                                                                     save_path, 
                                                                     batch_input['name'][i], 
                                                                     class_idex, 
-                                                                    origin_size[i][::-1]
-                                                                    )  #class, H, W
+                                                                    origin_size[i]
+                                                                    )  #class, 1, H, W
 
             class_score_metrics_ = SegMetrics(resize_scores, resize_labels, args.metrics)  #每张图片计算类别的 平均iou 和 dice
             class_overlap_metrics_ = SegMetrics(resize_overlaps, resize_labels, args.metrics) #每张图片计算类别的 平均iou 和 dice
