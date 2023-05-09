@@ -125,8 +125,8 @@ def evaluate_batch_images(args, model):
                 model.set_image(image)
 
                 if args.include_prompt_point:
-                    point_coords = batch_input['point_coords'][i][j].cpu().numpy()
-                    point_labels = batch_input['point_labels'][i][j].cpu().numpy()
+                    point_coords = batch_input['point_coords'][i][j]
+                    point_labels = batch_input['point_labels'][i][j]
                 else:
                     point_coords, point_labels = None, None
 
