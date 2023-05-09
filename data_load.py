@@ -309,7 +309,6 @@ class Data_Loader(Dataset):
 
     def __getitem__(self, index):
         image_input = {}
-
         # 根据index读取图片
         image = cv2.imread(self.imgs_path[index])
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -317,11 +316,9 @@ class Data_Loader(Dataset):
 
         image_input['original_size'] = tuple(mask.shape)
         
-        augments = self.transforms(image=image)
-        image = augments['image']
-        # augments = self.transforms(image=image, mask=mask)
-        # image, mask = augments['image'], augments['mask'].astype(np.int64)
-
+        augments = self.transforms(image=image, mask=mask)
+        image, mask_ = augments['image'], augments['mask'].astype(np.int64)
+        mask_ = mask_to_one_hot(mask_, self.num_class)[1:]
 
         image = np.repeat(np.expand_dims(image, axis=0), repeats=self.num_class-1, axis=0)
         mask = mask_to_one_hot(mask, self.num_class)[1:]
@@ -330,13 +327,15 @@ class Data_Loader(Dataset):
         image_input["label"] = mask
  
         if self.prompt_point:
-            point, point_label = random_point_sampling(mask, point_num = self.point_num)
+            point, point_label = random_point_sampling(mask_, point_num = self.point_num)
             image_input["point_coords"] = point
             image_input["point_labels"] = point_label
 
         if self.prompt_box:
-            box = get_box(mask, num_classes=self.boxes_num)
+            box = get_box(mask_, num_classes=self.boxes_num)
             image_input["boxes"] = box
+
+        # import pdb; pdb.set_trace()
 
         image_name = self.imgs_path[index].split('/')[-1]
 
@@ -345,6 +344,7 @@ class Data_Loader(Dataset):
             return image_input
         else:
             return image_input
+
 
     def __len__(self):
         # 返回训练集大小
