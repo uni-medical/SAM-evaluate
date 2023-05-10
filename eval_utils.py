@@ -163,7 +163,45 @@ def save_img3d(predict_overlap, save_path, mask_name, zero_mask, index):   #zero
 
         predict = nib.Nifti1Image(class_zero_mask, affine=np.eye(4))
         nib.save(predict, os.path.join(save_overlap_path, save_name))
+        
+def is_saved(save_path, mask_name, num_class):
+    save_overlap_path = os.path.join(save_path, 'predict_masks')
+    for i in range(num_class):
+        if num_class == 1:
+            save_name = mask_name
+        else:
+            save_name = mask_name.split('.nii.gz')[0] + '_' + str(i+1).zfill(3) + '.nii.gz'
+        if not os.path.exists(os.path.join(save_overlap_path, save_name)):
+            return False
+    return True
 
+
+def update_result_dict(save_path, mask_name, num_class, res_dict, metrics):
+    if mask_name in res_dict:
+        return res_dict
+    
+    save_overlap_path = os.path.join(save_path, 'predict_masks')
+    gt_path = os.path.join(save_path, 'gt_segmentations')
+    res_dict[mask_name] = {'iou': [], 'dice': []}
+    for j in range(num_class):
+        if num_class == 1:
+            save_name = mask_name
+        else:
+            save_name = mask_name.split('.nii.gz')[0] + '_' + str(j+1).zfill(3) + '.nii.gz'
+
+        itk_pred = sitk.ReadImage(os.path.join(save_overlap_path, save_name))
+        itk_label = sitk.ReadImage(os.path.join(gt_path, save_name))
+        pred_j = torch.tensor(sitk.GetArrayFromImage(itk_pred)).unsqueeze(1)
+        label_j = torch.tensor(sitk.GetArrayFromImage(itk_label)).unsqueeze(1)
+        if label_j.sum() > 0:
+            slice_ids = torch.where(label_j)[0].unique()
+            class_metric_j = SegMetrics(pred_j[slice_ids], label_j[slice_ids], metrics)
+            res_dict[mask_name]['iou'].append(class_metric_j[0].item())
+            res_dict[mask_name]['dice'].append(class_metric_j[1].item())
+        else:
+            res_dict[mask_name]['iou'].append(-1)
+            res_dict[mask_name]['dice'].append(-1)
+    return res_dict
 
 def save_img(predict_score, predict_overlap, label, save_path, mask_name, class_idex, origin_size):
     predict_score = predict_score.cpu().numpy()
