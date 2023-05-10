@@ -108,8 +108,8 @@ def select_mask_with_highest_overlap(mask: torch.Tensor, label: torch.Tensor) ->
         out_overlap_score: shape (b,n)
     """
     
-    mask = torch.tensor(mask, dtype=torch.int)
-    label = torch.tensor(label, dtype=torch.int)
+    mask = torch.tensor(np.array(mask), dtype=torch.int)
+    label = torch.tensor(np.array(label), dtype=torch.int)
 
     if len(mask.shape) != 5 and mask.shape[2] != 1:
         mask = mask.unsqueeze(2)
@@ -137,24 +137,77 @@ def select_mask_with_highest_overlap(mask: torch.Tensor, label: torch.Tensor) ->
 
     return out_mask, out_overlap_score
 
+def is_saved(save_path, mask_name, num_class):
+    save_overlap_path = os.path.join(save_path, 'predict_masks')
+    for i in range(num_class):
+        if num_class == 1:
+            save_name = mask_name
+        else:
+            save_name = mask_name.split('.nii.gz')[0] + '_' + str(i+1).zfill(3) + '.nii.gz'
+        if not os.path.exists(os.path.join(save_overlap_path, save_name)):
+            return False
+    return True
 
-def save_img3d(predict_overlap, save_path, mask_name, zero_mask, index):   #zero_mask [168, 4, 256, 256]   index [67]
+
+def update_result_dict(save_path, mask_name, num_class, res_dict, metrics):
+    if mask_name in res_dict:
+        return res_dict
+    
+    save_overlap_path = os.path.join(save_path, 'predict_masks')
+    gt_path = os.path.join(save_path, 'gt_segmentations')
+    res_dict[mask_name] = {'iou': [], 'dice': []}
+    for j in range(num_class):
+        if num_class == 1:
+            save_name = mask_name
+        else:
+            save_name = mask_name.split('.nii.gz')[0] + '_' + str(j+1).zfill(3) + '.nii.gz'
+
+        itk_pred = sitk.ReadImage(os.path.join(save_overlap_path, save_name))
+        itk_label = sitk.ReadImage(os.path.join(gt_path, save_name))
+        pred_j = torch.tensor(sitk.GetArrayFromImage(itk_pred)).unsqueeze(1)
+        label_j = torch.tensor(sitk.GetArrayFromImage(itk_label)).unsqueeze(1)
+        if label_j.sum() > 0:
+            slice_ids = torch.where(label_j)[0].unique()
+            class_metric_j = SegMetrics(pred_j[slice_ids], label_j[slice_ids], metrics)
+            res_dict[mask_name]['iou'].append(class_metric_j[0].item())
+            res_dict[mask_name]['dice'].append(class_metric_j[1].item())
+        else:
+            res_dict[mask_name]['iou'].append(-1)
+            res_dict[mask_name]['dice'].append(-1)
+    return res_dict
+
+
+def save_img3d(predict_overlap, save_path, mask_name, zero_mask, index, label):   #zero_mask [168, 4, 256, 256]   index [67]
 
     if predict_overlap.dtype == torch.bool:
         predict_overlap = predict_overlap.type(torch.int) #class, slice, 256, 256
+    
+    label = label.transpose(1, 0) #class, slice, 256, 256
 
     predict_overlap = predict_overlap.cpu().numpy()
     zero_mask = zero_mask.cpu().numpy()
 
+    label = label.cpu().numpy()
+    zero_gt = np.zeros_like(zero_mask)
+
     save_overlap_path = os.path.join(save_path, 'predict_masks')
     os.makedirs(save_overlap_path, exist_ok=True)
+
+    gt_path = os.path.join(save_path, 'gt_segmentations')
+    os.makedirs(gt_path, exist_ok=True)
 
     for i in range(predict_overlap.shape[0]): #class
         pred = predict_overlap[i]
         pred_ = np.moveaxis(pred, [0, 1, 2], [2, 0, 1])  #256, 256, 67
         class_zero_mask = np.moveaxis(zero_mask[:,i,...], [0, 1, 2], [2, 0, 1])  #256, 256, 168
+
+        gt = label[i]
+        gt_ = np.moveaxis(gt, [0, 1, 2], [2, 0, 1])
+        class_zero_gt = np.moveaxis(zero_gt[:,i,...], [0, 1, 2], [2, 0, 1])  #256, 256, 168
+
         for item, value in enumerate(index):
             class_zero_mask[:, :, value] = pred_[:, :, item]
+            class_zero_gt[:, :, value] = gt_[:, :, item]
 
         if predict_overlap.shape[0] == 1:
             save_name = mask_name
@@ -163,6 +216,9 @@ def save_img3d(predict_overlap, save_path, mask_name, zero_mask, index):   #zero
 
         predict = nib.Nifti1Image(class_zero_mask, affine=np.eye(4))
         nib.save(predict, os.path.join(save_overlap_path, save_name))
+
+        gt = nib.Nifti1Image(class_zero_gt, affine=np.eye(4))
+        nib.save(gt, os.path.join(gt_path, save_name))
 
 
 def save_img(predict_score, predict_overlap, label, save_path, mask_name, class_idex, origin_size):

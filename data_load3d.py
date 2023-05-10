@@ -11,19 +11,6 @@ import nibabel as nib
 from data_load import random_point_sampling, get_box
 import json
 
-def is_saved(save_path, mask_name, num_class):
-    save_overlap_path = os.path.join(save_path,'predict_masks')
-    for i in range(num_class):
-        if num_class == 1:
-            save_name = mask_name
-        else:
-            save_name = mask_name.split(".nii.gz")[0] + '_' + str(i + 1).zfill(3) + '.nii.gz'
-        
-        if not os.path.exists(os.path.join(save_overlap_path, save_name)):
-            return False
-            
-    return True
-
 
 def copy_image(image_matrix, num_class):
     out_matrix = np.tile(image_matrix[:,np.newaxis,:,:,:], (1, num_class, 1, 1, 1))
@@ -36,8 +23,8 @@ class Data_Loader(Dataset):
                  dim='x',
                  prompt_point=True,
                  prompt_box=True,
-                 num_boxes = 2,
-                 num_point = 2):
+                 num_boxes = 1,
+                 num_point = 0):
 
         # 初始化函数，读取所有data_path下的图片
         self.image_size = image_size
@@ -75,43 +62,67 @@ class Data_Loader(Dataset):
             print("We want the number of 'z' axes to be at least larger than (image size: %s * 0.5)"%self.image_size)
             print('Can only be tested on the "z" axis! image size:', image.shape)
 
+        unique_values = np.unique(mask)
+        if len(unique_values) == 1 and unique_values[0] == 0:
+            image_input["image"] = np.array([0])
+            image_input["label"] = np.array([0])
+            image_input['ori_label'] = np.array([0])
+            image_input["point_coords"] = np.array([0])
+            image_input["point_labels"] = np.array([0])
+            image_input["boxes"] = np.array([0])
+            image_input["dim"] = self.dim
+            image_input["zero_mask"] = np.array([0])
+            image_input["index"] = np.array([0])
+            if self.requires_name:
+                image_input["name"] = self.imgs_path[index].split('/')[-1]
+            return image_input
+
         target_size = (self.image_size, self.image_size)
+
         if self.dim == 'z':
             origin_slice = mask.shape[2]
             nonzero_slices = np.where(np.any(mask, axis=(0, 1)))[0]
             select_image = image[:, :, nonzero_slices]
-            selcet_mask = mask[:, :, nonzero_slices]
+            select_mask = mask[:, :, nonzero_slices]
 
         else:
             if self.dim == 'x':
                 origin_slice = mask.shape[0]
                 nonzero_slices = np.where(np.any(mask, axis=(1, 2)))[0]
                 select_image = image[nonzero_slices, :, :].transpose(1,2,0)
-                selcet_mask = mask[nonzero_slices, :, :].transpose(1,2,0)
+                select_mask = mask[nonzero_slices, :, :].transpose(1,2,0)
 
             else:
                 origin_slice = mask.shape[1]
                 nonzero_slices = np.where(np.any(mask, axis=(0, 2)))[0]
                 select_image = image[:, nonzero_slices, :].transpose(0,2,1)
-                selcet_mask = mask[:,nonzero_slices, :].transpose(0,2,1)
-
+                select_mask = mask[:,nonzero_slices, :].transpose(0,2,1)
 
         class_num = self.num_class
-  
         max_pixel = select_image.max()
         min_pixel = select_image.min()
         select_image = (255 * (select_image - min_pixel) / (max_pixel - min_pixel)).astype(np.uint8)
-        resized_image = cv2.resize(select_image, target_size, cv2.INTER_NEAREST)
-        resized_mask = cv2.resize(selcet_mask, target_size, cv2.INTER_NEAREST).astype(np.int16)
+  
+        resized_image = cv2.resize(select_image, target_size, cv2.INTER_NEAREST)  #resize (H,W,1) -> (H,W)
+        resized_mask = cv2.resize(select_mask, target_size, cv2.INTER_NEAREST).astype(np.int16) #resize (H,W,1) -> (H,W)
+        ori_mask = select_mask.astype(np.int16)
+
+        if len(resized_image.shape) == 2:
+                resized_image = resized_image[:,:,np.newaxis]
+        if len(resized_mask.shape) == 2:
+                resized_mask = resized_mask[:,:,np.newaxis]
 
         volume_image = []
         volume_mask = []
+        volume_ori_mask = []
         for i in range(resized_image.shape[-1]):
             volume_image.append(np.repeat(resized_image[...,i:i+1], repeats=3, axis=-1))
             volume_mask.append(resized_mask[...,i])
+            volume_ori_mask.append(ori_mask[...,i])
 
         volume_images = np.stack(volume_image, axis=0)
         volume_masks = np.stack(volume_mask, axis=0)
+        volume_ori_masks = np.stack(volume_ori_mask, axis=0)
 
         if len(volume_images.shape)<4:
             volume_images = np.expand_dims(volume_images, axis=0)
@@ -119,17 +130,23 @@ class Data_Loader(Dataset):
         if len(volume_masks.shape)<3:
             volume_masks = np.expand_dims(volume_masks, axis=0)
 
+        if len(volume_ori_masks.shape)<3:
+            volume_ori_masks = np.expand_dims(volume_ori_masks, axis=0)
+
         copy_img = copy_image(volume_images, class_num - 1)
         image_input["image"] = copy_img
 
         if class_num == 2:
             label = np.expand_dims(volume_masks, axis=1)
+            ori_label = np.expand_dims(volume_ori_masks, axis=1)
         else:
             eye = np.eye(class_num, dtype=volume_masks.dtype)
             label = eye[volume_masks].transpose(0, 3, 1, 2)[:,1:,...]
+            ori_label = eye[volume_ori_masks].transpose(0, 3, 1, 2)[:,1:,...]
 
         image_input["label"] = label
-        S, C, H, W = image_input["label"].shape
+        image_input['ori_label'] = ori_label
+        S, C, H, W = image_input["ori_label"].shape
         zero_mask = torch.zeros((origin_slice, C, H, W), dtype=torch.int)
 
 
@@ -173,12 +190,10 @@ class Data_Loader(Dataset):
 
 
 if __name__ == "__main__":
-    train_dataset = Data_Loader("mount_preprocessed_sam/3d/semantic_seg/ct/CHAOS_Task_4/", image_size=256, prompt_point=True, prompt_box=True, dim='z',)
+    train_dataset = Data_Loader('mount_preprocessed_sam/3d/semantic_seg/ct_mtt/ISLES2018/', image_size=224, prompt_point=False, prompt_box=False, dim='z',num_boxes = 0, num_point = 0)
     print("数据个数：", len(train_dataset))
     train_batch_sampler = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=1, shuffle=False)
     for batched_image in (train_batch_sampler):
         print(batched_image['name'])
         print(batched_image['image'].shape)
-        print(batched_image['label'].shape)
-        print(batched_image['boxes'].shape)
         print('*'*20)

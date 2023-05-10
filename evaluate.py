@@ -15,18 +15,18 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=8, help="train batch size")
     parser.add_argument("--image_size", type=int, default=1024, help="image_size")
-    parser.add_argument("--data_path", type=str, default= 'mount_preprocessed_sam/2d/semantic_seg/endoscopy/EAD19/', help="eval data path")  #'mount_preprocessed_sam/2d/semantic_seg/endoscopy/EAD19/'
+    parser.add_argument("--data_path", type=str, default= 'mount_preprocessed_sam/2d/semantic_seg/dermoscopy/isic2017_task1/', help="eval data path")  #'mount_preprocessed_sam/2d/semantic_seg/endoscopy/EAD19/'
     parser.add_argument("--data_mode", type=str, default='val', help="eval train or test data")
     parser.add_argument("--metrics", nargs='+', default=['acc', 'iou', 'dice', 'sens', 'spec'], help="metrics")
-    parser.add_argument("--device_ids", nargs='+', type=int, default=[0,2,4,7], help="device_ids")
+    parser.add_argument("--device_ids", nargs='+', type=int, default=[2, 3, 4, 5], help="device_ids")
     parser.add_argument("--model_type", type=str, default="vit_h", help="sam model_type")
-    parser.add_argument("--sam_checkpoint", type=str, default="Evaluate-SAM/pretrain_model/sam_vit_h_4b8939.pth", help="sam checkpoint")
+    parser.add_argument("--sam_checkpoint", type=str, default="SAM-Med/pretrain_model/sam_vit_h.pth", help="sam checkpoint")
     parser.add_argument("--include_prompt_point", type=bool, default=False, help="need point prompt")
     parser.add_argument("--num_point", type=int, default=4, help="point or point number")
     parser.add_argument("--include_prompt_box", type=bool, default=True, help="need boxes prompt")
     parser.add_argument("--num_boxes", type=int, default=1, help="boxes or boxes number")
     parser.add_argument("--multimask_output", type=bool, default=True, help="multimask output")
-    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/2d/endoscopy/EndoCV2020_EAD/', help="save data path")
+    parser.add_argument("--save_path", type=str, default='Evaluate-SAM/save_datasets/2d/dermoscopy/isic2017_task1/', help="save data path")
     args = parser.parse_args()
 
     return args
@@ -125,8 +125,8 @@ def evaluate_batch_images(args, model):
                 model.set_image(image)
 
                 if args.include_prompt_point:
-                    point_coords = batch_input['point_coords'][i][j].cpu().numpy()
-                    point_labels = batch_input['point_labels'][i][j].cpu().numpy()
+                    point_coords = batch_input['point_coords'][i][j]
+                    point_labels = batch_input['point_labels'][i][j]
                 else:
                     point_coords, point_labels = None, None
 
@@ -165,6 +165,8 @@ def evaluate_batch_images(args, model):
             class_out_iou = torch.stack(class_score, dim=0)  #class, 3, 1
 
             label = ori_mask[i]     #3, H, W
+            # import pdb; pdb.set_trace()
+
             select_labels, class_idex = select_label(label)  #实际class, H, W  ——> 2, H, W
    
             select_class_outmask = class_out_mask[class_idex, ...]
@@ -174,6 +176,7 @@ def evaluate_batch_images(args, model):
             best_overlap_masks, overlap_score = select_mask_with_highest_overlap(select_class_outmask, select_labels)  #[class, 1, 1024, 1024], [class, n, 1]
        
             origin_size = batch_input['original_size']
+
 
             resize_scores, resize_overlaps, resize_labels = save_img(best_iouscore_masks, 
                                                                     best_overlap_masks, 
