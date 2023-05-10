@@ -108,8 +108,8 @@ def select_mask_with_highest_overlap(mask: torch.Tensor, label: torch.Tensor) ->
         out_overlap_score: shape (b,n)
     """
     
-    mask = torch.tensor(mask, dtype=torch.int)
-    label = torch.tensor(label, dtype=torch.int)
+    mask = torch.tensor(np.array(mask), dtype=torch.int)
+    label = torch.tensor(np.array(label), dtype=torch.int)
 
     if len(mask.shape) != 5 and mask.shape[2] != 1:
         mask = mask.unsqueeze(2)
