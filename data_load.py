@@ -309,7 +309,6 @@ class Data_Loader(Dataset):
 
     def __getitem__(self, index):
         image_input = {}
-
         # 根据index读取图片
         image = cv2.imread(self.imgs_path[index])
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -345,6 +344,7 @@ class Data_Loader(Dataset):
             return image_input
         else:
             return image_input
+
 
     def __len__(self):
         # 返回训练集大小

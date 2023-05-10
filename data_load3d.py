@@ -196,4 +196,4 @@ if __name__ == "__main__":
     for batched_image in (train_batch_sampler):
         print(batched_image['name'])
         print(batched_image['image'].shape)
-        print('*'*20)
+
