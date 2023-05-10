@@ -11,19 +11,6 @@ import nibabel as nib
 from data_load import random_point_sampling, get_box
 import json
 
-def is_saved(save_path, mask_name, num_class):
-    save_overlap_path = os.path.join(save_path,'predict_masks')
-    for i in range(num_class):
-        if num_class == 1:
-            save_name = mask_name
-        else:
-            save_name = mask_name.split(".nii.gz")[0] + '_' + str(i + 1).zfill(3) + '.nii.gz'
-        
-        if not os.path.exists(os.path.join(save_overlap_path, save_name)):
-            return False
-            
-    return True
-
 
 def copy_image(image_matrix, num_class):
     out_matrix = np.tile(image_matrix[:,np.newaxis,:,:,:], (1, num_class, 1, 1, 1))
