@@ -203,7 +203,6 @@ class everything_3d():
                     everything_ori_masks, predicted_iou = self.generate_mask(self.model, vol_images[i], ori_label[i], imgs, i)
                     if everything_ori_masks != None:
                         self.save_img(everything_ori_masks, predicted_iou, img_save_path)
-                        print(everything_ori_masks.shape, ori_label.shape)
 
             else:
                 print(f"This case: {imgs} does not meet the calculation criteria")
