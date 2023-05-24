@@ -3,11 +3,8 @@ from data_load3d import Data_Loader
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from typing import Tuple
-from eval_utils import save_img3d, SegMetrics, is_saved, update_result_dict
-from evaluate3d import get_logger
 import argparse
 import torch.nn as nn
-import logging
 import os
 import numpy as np
 from matplotlib import pyplot as plt
@@ -52,15 +49,14 @@ class everything_3d():
         os.makedirs(self.save_path, exist_ok=True)
 
         self.list_path = self.save_path + '/everything_list.txt'
-        self.txt_path = self.save_path + "/auto_predict3d.txt"
+        self.skip_path = self.save_path + "/skip_list.txt"
         self.json_path = os.path.join(self.save_path, 'result.json')
 
         if os.path.exists(self.json_path):
             self.res_dict = json.load(open(self.json_path, 'r'))
         else:
              self.res_dict = {}
-        self.loggers = get_logger(self.txt_path)
-      
+
     def load_data(self, data_path):
         imgs_path = []
         label_path = []
@@ -160,7 +156,7 @@ class everything_3d():
         return ori_masks, scores
 
     
-    def save_img(self, masks, scores, path):
+    def save_img(self, masks, scores, ori_label, path):
         predict_mask = masks.cpu().numpy()
         score = scores.cpu().numpy()
         N, H, W = predict_mask.shape
@@ -169,6 +165,7 @@ class everything_3d():
         folder = '/'.join(path_list[:-1])
         mask_name = path_list[-1]
         
+
         os.makedirs(folder, exist_ok=True)
         for i in range(N):
             save_name = mask_name + '_' + str(i+1).zfill(3) + '_' + str('{:.4f}'.format(score[i])) + '.png'
@@ -180,6 +177,34 @@ class everything_3d():
             else:
                 with open(self.list_path, 'w') as f:
                     f.write(os.path.join(folder, save_name) + '\n')
+
+
+        X, H, W = ori_label.shape
+        Y, h, w = predict_mask.shape
+
+        assert H==h
+        assert W ==w
+
+        skip_list = []
+        for x in range(X):
+            for y in range(Y):
+                intersection = (ori_label[x] * predict_mask[y]).sum()
+                union = ori_label[x].sum() + predict_mask[y].sum() - intersection
+                overlap = intersection / union
+                if overlap > 0.5:
+                    skip_list.append(y)
+
+        unique_list = list(set(skip_list))
+        if len(unique_list)>0:
+            for i in unique_list:
+                skip_name = mask_name + '_' + str(i+1).zfill(3) + '_' + str('{:.4f}'.format(score[i])) + '.png'
+            if os.path.exists(self.skip_path):
+                with open(self.skip_path, 'a') as f:
+                    f.write(os.path.join(folder, skip_name) + '\n')
+            else:
+                with open(self.skip_path, 'w') as f:
+                    f.write(os.path.join(folder, skip_name) + '\n')
+
 
 
     def predict(self):
@@ -202,8 +227,10 @@ class everything_3d():
 
                     everything_ori_masks, predicted_iou = self.generate_mask(self.model, vol_images[i], ori_label[i], imgs, i)
                     if everything_ori_masks != None:
-                        self.save_img(everything_ori_masks, predicted_iou, img_save_path)
+                        self.save_img(everything_ori_masks, predicted_iou, ori_label[i], img_save_path)
+                        print(everything_ori_masks.shape, ori_label[i].shape)
 
+                        
             else:
                 print(f"This case: {imgs} does not meet the calculation criteria")
 
