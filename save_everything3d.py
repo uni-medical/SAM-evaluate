@@ -83,11 +83,7 @@ class everything_3d():
         imgs_path.sort()
         label_path.sort()
 
-        with open(os.path.join(data_path, 'dataset.json'), 'r') as f:
-            data = json.load(f)
-        class_num = len(data['labels'])
-
-        return imgs_path, label_path, class_num
+        return imgs_path, label_path
     
     def process_img(self, image, mask, image_size, dim, class_num):
         if dim == 'z':
@@ -111,16 +107,15 @@ class everything_3d():
         min_pixel = select_image.min()
         select_image = (255 * (select_image - min_pixel) / (max_pixel - min_pixel)).astype(np.uint8)
   
-        resized_image = cv2.resize(select_image, target_size, cv2.INTER_NEAREST)  #resize (H,W,1) -> (H,W)
         ori_mask = select_mask.astype(np.int16)
 
-        if len(resized_image.shape) == 2:
-                resized_image = resized_image[:,:,np.newaxis]
+        if len(select_image.shape) == 2:
+                select_image = select_image[:,:,np.newaxis]
 
         volume_image = []
         volume_ori_mask = []
-        for i in range(resized_image.shape[-1]):
-            volume_image.append(np.repeat(resized_image[...,i:i+1], repeats=3, axis=-1))
+        for i in range(select_image.shape[-1]):
+            volume_image.append(np.repeat(select_image[...,i:i+1], repeats=3, axis=-1))
             volume_ori_mask.append(ori_mask[...,i])
 
         volume_images = np.stack(volume_image, axis=0)
@@ -134,20 +129,16 @@ class everything_3d():
     
         return volume_images, ori_label
 
-    def generate_mask(self, model, input_image, ori_label, image_name=None, slice = None):
+    def generate_mask(self, model, input_image, image_name=None, slice = None):
         generate_masks = model.generate(input_image)
    
         everything_mask = [x['segmentation'] for x in generate_masks]  #一个slice
         predicted_iou = [x['predicted_iou'] for x in generate_masks]  #一个slice
       
         if  len(everything_mask)>= 1:
-            masks = torch.as_tensor(np.stack(everything_mask, axis=0), dtype=torch.int) # n, h, w
+            ori_masks = torch.as_tensor(np.stack(everything_mask, axis=0), dtype=torch.int) # n, ori_h, ori_w
             scores = torch.as_tensor(np.stack(predicted_iou, axis=0), dtype=torch.float) # n
         
-            ori_masks = torch.zeros((masks.shape[0], *ori_label.shape[-2:]), dtype=torch.int) # n, ori_h, ori_w
-            for k in range(masks.shape[0]):
-                m = resize(masks[k].cpu().numpy().astype(float), ori_label.shape[-2:], 1, mode='edge', clip=True, anti_aliasing=False) # Follow nnUNet
-                ori_masks[k, m >= 0.5] = 1
         else:
             print(f"{image_name} slice {slice} did not generate any mask")
             ori_masks =None
@@ -165,7 +156,6 @@ class everything_3d():
         folder = '/'.join(path_list[:-1])
         mask_name = path_list[-1]
         
-
         os.makedirs(folder, exist_ok=True)
         for i in range(N):
             save_name = mask_name + '_' + str(i+1).zfill(3) + '_' + str('{:.4f}'.format(score[i])) + '.png'
@@ -182,8 +172,8 @@ class everything_3d():
         X, H, W = ori_label.shape
         Y, h, w = predict_mask.shape
 
-        assert H==h
-        assert W ==w
+        assert H == h
+        assert W == w
 
         skip_list = []
         for x in range(X):
@@ -198,43 +188,53 @@ class everything_3d():
         if len(unique_list)>0:
             for i in unique_list:
                 skip_name = mask_name + '_' + str(i+1).zfill(3) + '_' + str('{:.4f}'.format(score[i])) + '.png'
-            if os.path.exists(self.skip_path):
-                with open(self.skip_path, 'a') as f:
-                    f.write(os.path.join(folder, skip_name) + '\n')
-            else:
-                with open(self.skip_path, 'w') as f:
-                    f.write(os.path.join(folder, skip_name) + '\n')
 
+                if os.path.exists(self.skip_path):
+                    with open(self.skip_path, 'a') as f:
+                        f.write(os.path.join(folder, skip_name) + '\n')
+                else:
+                    with open(self.skip_path, 'w') as f:
+                        f.write(os.path.join(folder, skip_name) + '\n')
+
+    def is_save(self, exist_path):
+        if not os.path.exists(exist_path):
+            return False
+        else:
+            return True
 
 
     def predict(self):
-        imgs_path, label_path, class_num = self.load_data(self.data_path)
-        for item, imgs in enumerate(tqdm(imgs_path)):  #volume
-            image = nib.load(imgs).get_fdata()
-            mask = nib.load(label_path[item]).get_fdata()
-          
-            #mount_preprocessed_sam/3d/semantic_seg/mr_de/Myops2020/labelsTr/myops_training_101.nii.gz
-            #Evaluate-SAM/save_datasets/semantic_seg_3d_everything/mr_de/Myops2020/z/labelsTr/myops_training_101
+        imgs_path, label_path = self.load_data(self.data_path)
+        exist_list = self.data_path.split('/3d/semantic_seg/')
+        exist_list[0] = self.save_path
+        exist_path = '/'.join(exist_list) + f"/{self.dim}/"
 
-            if image.shape[-1] > (self.image_size * 0.5) or self.dim == 'z': #判断长宽是或否适用
-                vol_images, ori_label = self.process_img(image, mask, self.image_size, self.dim, class_num)
-                #(slice, h, w, 3)  (slice, class, ori_h, ori_w)
-                for i in range(vol_images.shape[0]): #slice
+        if not self.is_save(exist_path):  #判断  path/axis是否被保存过
+            for item, imgs in enumerate(tqdm(imgs_path)):  #volume
+                label_type = label_path[item].split('/')[-2]
+                label_name = label_path[item].split('/')[-1]
+                save_path = exist_path + f"{label_type}/{label_name}"
 
-                    img_save_list = label_path[item].replace('.nii.gz',f'_{i}').split('/3d/semantic_seg/')
-                    img_save_list[0] = self.save_path
-                    img_save_path = '/'.join(img_save_list).replace('/labels', f"/{self.dim}/labels")
+                image = nib.load(imgs).get_fdata()
+                mask = nib.load(label_path[item]).get_fdata()
 
-                    everything_ori_masks, predicted_iou = self.generate_mask(self.model, vol_images[i], ori_label[i], imgs, i)
-                    if everything_ori_masks != None:
-                        self.save_img(everything_ori_masks, predicted_iou, ori_label[i], img_save_path)
-            else:
-                print(f"This case: {imgs} does not meet the calculation criteria")
+                #mount_preprocessed_sam/3d/semantic_seg/mr_de/Myops2020/labelsTr/myops_training_101.nii.gz
+                #Evaluate-SAM/save_datasets/semantic_seg_3d_everything/mr_de/Myops2020/z/labelsTr/myops_training_101
+                if image.shape[-1] > (self.image_size * 0.5) or self.dim == 'z': #判断长宽是或否适用
+                    vol_images, ori_label = self.process_img(image, mask, self.image_size, self.dim, self.num_class)
+                    #(slice,ori_h, ori_w, 3)  (slice, class, ori_h, ori_w)
+                    for i in range(vol_images.shape[0]): #slice
+                        img_save_path = save_path.replace('.nii.gz', f'_{i}')
+                        everything_ori_masks, predicted_iou = self.generate_mask(self.model, vol_images[i], imgs, i)
+                        if everything_ori_masks != None:
+                            self.save_img(everything_ori_masks, predicted_iou, ori_label[i], img_save_path)
+                else:
+                    print(f"This case: {imgs} does not meet the calculation criteria")
 
 
 
 if __name__ == "__main__":
-    
+
     args = parse_args()
     device_str = ','.join(str(i) for i in args.device_ids)
     os.environ["CUDA_VISIBLE_DEVICES"] = f'{device_str}'
